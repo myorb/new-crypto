@@ -44,6 +44,15 @@ func main() {
 		})
 	}
 	mux.HandleFunc("GET /mode", setMode)
+	// Auth screens are frontend-only mocks: forms navigate to the next step
+	// client-side. Wire real handlers behind the same paths.
+	mux.Handle("GET /login", templ.Handler(pages.Login()))
+	mux.Handle("GET /signup", templ.Handler(pages.Signup()))
+	mux.Handle("GET /forgot-password", templ.Handler(pages.ForgotPassword()))
+	mux.Handle("GET /2fa/setup", templ.Handler(pages.Setup2FA()))
+	mux.HandleFunc("GET /verify", func(w http.ResponseWriter, r *http.Request) {
+		templ.Handler(pages.Verify(r.URL.Query().Get("method"))).ServeHTTP(w, r)
+	})
 
 	ln, err := listen()
 	if err != nil {

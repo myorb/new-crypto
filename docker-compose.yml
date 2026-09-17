@@ -4,17 +4,23 @@ services:
     container_name: templ-app-postgres
     restart: unless-stopped
     environment:
+      # Superuser - used only by Docker itself and `task db:psql`. The app never connects as it.
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-templ_app}
+      # Application roles, created by db/init/01-roles.sh on first start.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+      MIGRATOR_DB_PASSWORD: ${MIGRATOR_DB_PASSWORD:?set MIGRATOR_DB_PASSWORD in .env}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       # Postgres 18 images keep the cluster under /var/lib/postgresql/18/docker,
       # so the volume mounts the parent (not the old /var/lib/postgresql/data).
       - postgres_data:/var/lib/postgresql
-      # sqlc schema is applied once, when the volume is first created.
-      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      # Runs once when the volume is created: creates roles only. Schema comes
+      # from migrations (task db:migrate), so it can evolve without a reset.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./db/roles.sql:/db/roles.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-templ_app}"]
       interval: 5s

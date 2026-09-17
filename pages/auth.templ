@@ -1,0 +1,45 @@
+package pages
+
+import (
+	"templ-app/blocks/auth"
+	"templ-app/layouts"
+)
+
+// Login is the sign-in screen.
+templ Login() {
+	@layouts.Auth("Sign in") {
+		@auth.Login()
+	}
+}
+
+// Signup is the account creation screen.
+templ Signup() {
+	@layouts.Auth("Create account") {
+		@auth.Signup()
+	}
+}
+
+// Verify is the two-factor step. method is "app" (default) or "sms".
+templ Verify(method string) {
+	{{ v := auth.VerifyFixture() }}
+	if method == "sms" {
+		{{ v.Method = "sms" }}
+	}
+	@layouts.Auth("Two-factor authentication") {
+		@auth.Verify(v)
+	}
+}
+
+// Setup2FA is the authenticator enrolment screen.
+templ Setup2FA() {
+	@layouts.Auth("Set up two-factor authentication") {
+		@auth.Setup(auth.SetupFixture())
+	}
+}
+
+// ForgotPassword is the reset request screen.
+templ ForgotPassword() {
+	@layouts.Auth("Reset password") {
+		@auth.Forgot()
+	}
+}

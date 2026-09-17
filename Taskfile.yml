@@ -8,6 +8,22 @@ vars:
     sh: port=8090; while nc -z localhost $port >/dev/null 2>&1; do port=$((port+1)); done; echo $port
   PORT: '{{.PORT | default .FREE_PORT}}'
 
+  # Tailwind standalone CLI release downloaded when tailwindcss is not on PATH
+  # (Render's build image has no Homebrew). Keep in step with the local install.
+  TAILWIND_VERSION: v4.3.3
+  TAILWIND_TARGET:
+    sh: |
+      case "$(uname -s)-$(uname -m)" in
+        Linux-x86_64)  echo linux-x64 ;;
+        Linux-aarch64) echo linux-arm64 ;;
+        Darwin-arm64)  echo macos-arm64 ;;
+        Darwin-x86_64) echo macos-x64 ;;
+        *) echo "no Tailwind CLI build for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+      esac
+  # tailwindcss from PATH when installed, otherwise the copy tailwind:install puts in ./bin.
+  TAILWIND:
+    sh: command -v tailwindcss || echo ./bin/tailwindcss
+
 dotenv: [".env"]
 
 tasks:
@@ -41,8 +57,30 @@ tasks:
 
   tailwind:
     desc: Watch Tailwind CSS changes
+    deps: [tailwind:install]
     cmds:
-      - "tailwindcss -i ./assets/css/globals.css -o ./assets/css/output.css --watch"
+      - "{{.TAILWIND}} -i ./assets/css/globals.css -o ./assets/css/output.css --watch"
+
+  tailwind:install:
+    desc: Download the Tailwind standalone CLI into ./bin (skipped when tailwindcss is already on PATH)
+    status:
+      - command -v tailwindcss || test -x ./bin/tailwindcss
+    cmds:
+      - mkdir -p bin
+      - curl -fsSL https://github.com/tailwindlabs/tailwindcss/releases/download/{{.TAILWIND_VERSION}}/tailwindcss-{{.TAILWIND_TARGET}} -o bin/tailwindcss
+      - chmod +x bin/tailwindcss
+
+  css:
+    desc: Build the minified production stylesheet at assets/css/output.css
+    deps: [tailwind:install]
+    cmds:
+      - "{{.TAILWIND}} -i ./assets/css/globals.css -o ./assets/css/output.css --minify"
+
+  build:
+    desc: Production build (what Render runs) - the stylesheet plus the ./app binary. Does not run templ generate; the *_templ.go files are committed.
+    cmds:
+      - task: css
+      - go build -o app .
 
   dev:
     desc: Start development server with hot reload

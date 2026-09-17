@@ -1,2 +1,3 @@
-assets/css/output.css
 .env
+/app
+/bin/

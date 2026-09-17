@@ -1,10 +1,19 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    queries: "query.sql"
-    schema: "schema.sql"
+    # goose migrations double as the schema; sqlc stops reading at "-- +goose Down".
+    schema: "db/migrations"
+    queries: "db/queries"
     gen:
       go:
-        package: "tutorial"
-        out: "tutorial"
+        package: "store"
+        out: "internal/store"
         sql_package: "pgx/v5"
+        emit_enum_valid_method: true
+        overrides:
+          # crypto_amount is a NUMERIC(38,18) domain; map it like NUMERIC.
+          - db_type: "crypto_amount"
+            go_type: "github.com/jackc/pgx/v5/pgtype.Numeric"
+          - db_type: "crypto_amount"
+            nullable: true
+            go_type: "github.com/jackc/pgx/v5/pgtype.Numeric"

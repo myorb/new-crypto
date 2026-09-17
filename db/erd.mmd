@@ -1,5 +1,5 @@
 ---
-title: Crypto Payment Provider · v1.0 · multi-provider / multi-network / multi-asset
+title: Crypto Payment Provider · v1.1 · multi-provider / multi-network / multi-asset (schema = db/migrations)
 ---
 erDiagram
     %% ───────────────── Identity & access ─────────────────
@@ -81,7 +81,7 @@ erDiagram
         bytea token_hash UK
     }
     login_attempts {
-        bigserial id PK
+        bigint id PK
         uuid user_id FK
         auth_provider provider
         inet ip_address
@@ -94,7 +94,7 @@ erDiagram
         text[] scopes
     }
     audit_logs {
-        bigserial id PK
+        bigint id PK
         uuid organization_id FK
         uuid actor_user_id FK
         uuid actor_api_key_id FK
@@ -107,7 +107,7 @@ erDiagram
 
     %% ───────────────── Providers · networks · assets ─────────────────
     payment_providers {
-        smallserial id PK
+        smallint id PK
         text code UK "tron_rpc, evm_rpc, fireblocks, binance_pay"
         provider_kind kind "node, custodial_api, exchange_rail"
         text adapter
@@ -115,7 +115,7 @@ erDiagram
         text credentials_ref
     }
     networks {
-        smallserial id PK
+        smallint id PK
         text code UK "tron, ethereum, bsc, polygon, bitcoin, solana"
         network_family family
         bigint chain_id
@@ -134,7 +134,7 @@ erDiagram
         smallint priority
     }
     assets {
-        smallserial id PK
+        smallint id PK
         smallint network_id FK
         text code UK "USDT_TRON, USDT_ETH, BTC"
         text symbol
@@ -156,7 +156,7 @@ erDiagram
         text external_cursor
     }
     exchange_rates {
-        bigserial id PK
+        bigint id PK
         smallint base_asset_id FK
         text quote
         numeric rate
@@ -308,7 +308,7 @@ erDiagram
         uuid reference_id
     }
     ledger_entries {
-        bigserial id PK
+        bigint id PK
         uuid journal_id FK
         uuid account_id FK
         numeric amount
@@ -340,7 +340,7 @@ erDiagram
         int attempts
     }
     provider_webhook_events {
-        bigserial id PK
+        bigint id PK
         smallint provider_id FK
         text external_event_id UK
         jsonb payload
@@ -440,3 +440,12 @@ erDiagram
     webhook_endpoints ||--o{ webhook_deliveries     : "delivers"
     events         ||--o{ webhook_deliveries        : "fan-out"
     payment_providers ||--o{ provider_webhook_events : "callbacks"
+
+    %% actors (who created / requested)
+    users          o|--o{ organization_members      : "invited by"
+    users          ||--o{ organization_invitations  : "invited by"
+    users          o|--o{ api_keys                  : "created by"
+    users          o|--o{ withdrawals               : "requested by"
+    api_keys       o|--o{ withdrawals               : "requested via"
+    users          o|--o{ withdrawal_addresses      : "added by"
+    users          o|--o{ webhook_endpoints         : "created by"

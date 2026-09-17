@@ -1,0 +1,417 @@
+package auth
+
+import (
+	"fmt"
+	"templ-app/components/button"
+	"templ-app/components/field"
+	"templ-app/components/icon"
+	"templ-app/components/input"
+	"templ-app/components/inputgroup"
+	selectcomp "templ-app/components/select"
+	"templ-app/components/separator"
+	"templ-app/utils"
+)
+
+// heading is the title block above each form.
+templ heading(title, description string) {
+	<div class="mb-6 flex flex-col gap-1.5">
+		<h2 class="text-2xl font-semibold tracking-tight">{ title }</h2>
+		<p class="text-muted-foreground text-sm">{ description }</p>
+	</div>
+}
+
+// mockForm navigates to next on submit so the flow is walkable without a
+// backend. Replace with a real POST in production.
+templ mockForm(next string) {
+	<form class="grid gap-4" method="post" onsubmit={ templ.JSUnsafeFuncCall("event.preventDefault();window.location.href=" + fmt.Sprintf("%q", next)) }>
+		{ children... }
+	</form>
+}
+
+// passwordField is an input with a show/hide toggle.
+templ passwordField(id, label, autocomplete string, hint templ.Component) {
+	@field.Field() {
+		<div class="flex items-center justify-between">
+			@field.Label(field.LabelProps{For: id}) {
+				{ label }
+			}
+			if hint != nil {
+				@hint
+			}
+		</div>
+		@inputgroup.InputGroup() {
+			@inputgroup.Input(inputgroup.InputProps{ID: id, Type: "password", Name: id, Attributes: templ.Attributes{"autocomplete": autocomplete, "required": true}})
+			@inputgroup.Addon(inputgroup.AddonProps{Align: inputgroup.AlignInlineEnd}) {
+				@inputgroup.Button(inputgroup.ButtonProps{Variant: button.VariantGhost, Size: inputgroup.ButtonSizeIconXs, Attributes: templ.Attributes{
+					"aria-label": "Show password",
+					"onclick":    "const i=document.getElementById('" + id + "');i.type=i.type==='password'?'text':'password'",
+				}}) {
+					@icon.Eye()
+				}
+			}
+		}
+	}
+}
+
+templ forgotLink() {
+	<a href="/forgot-password" class="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline">Forgot password?</a>
+}
+
+// orDivider separates the primary form from alternative methods.
+templ orDivider(label string) {
+	<div class="relative flex items-center gap-3 py-1">
+		@separator.Separator(separator.Props{Class: "flex-1"})
+		<span class="text-muted-foreground text-xs">{ label }</span>
+		@separator.Separator(separator.Props{Class: "flex-1"})
+	</div>
+}
+
+templ googleMark() {
+	<svg viewBox="0 0 24 24" class="size-4" aria-hidden="true">
+		<path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.6 3.8-5.5 3.8-3.3 0-6-2.7-6-6.1s2.7-6.1 6-6.1c1.9 0 3.1.8 3.9 1.5l2.6-2.5C16.9 3.1 14.7 2 12 2 6.5 2 2 6.5 2 12s4.5 10 10 10c5.8 0 9.6-4.1 9.6-9.8 0-.7-.1-1.2-.2-1.7H12z"></path>
+	</svg>
+}
+
+// Login is the sign-in screen.
+templ Login() {
+	@heading("Welcome back", "Sign in to your PayChain dashboard")
+	@mockForm("/verify") {
+		@field.Field() {
+			@field.Label(field.LabelProps{For: "email"}) {
+				Work email
+			}
+			@input.Input(input.Props{ID: "email", Type: "email", Name: "email", Placeholder: "you@company.com", Required: true, Attributes: templ.Attributes{"autocomplete": "email", "autofocus": true}})
+		}
+		@passwordField("password", "Password", "current-password", forgotLink())
+		<label class="flex items-center gap-2 text-sm">
+			<input type="checkbox" name="remember" class="accent-primary size-4 rounded" checked/>
+			Keep me signed in for 30 days
+		</label>
+		@button.Button(button.Props{Type: button.TypeSubmit, Class: "w-full"}) {
+			Continue
+			@icon.ArrowRight(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-end"}})
+		}
+	}
+	@orDivider("or continue with")
+	<div class="grid gap-2">
+		@button.Button(button.Props{Variant: button.VariantOutline, Class: "w-full", Href: "/verify"}) {
+			@googleMark()
+			Google
+		}
+		<div class="grid grid-cols-2 gap-2">
+			@button.Button(button.Props{Variant: button.VariantOutline, Href: "/dashboard"}) {
+				@icon.ScanFace(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Passkey
+			}
+			@button.Button(button.Props{Variant: button.VariantOutline, Href: "/verify"}) {
+				@icon.Building2(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				SSO
+			}
+		</div>
+	</div>
+	<p class="text-muted-foreground mt-6 text-center text-sm">
+		New to PayChain?
+		<a href="/signup" class="text-foreground font-medium underline-offset-4 hover:underline">Create an account</a>
+	</p>
+}
+
+var countryOptions = []struct{ Value, Label string }{
+	{"DE", "Germany"}, {"US", "United States"}, {"GB", "United Kingdom"}, {"SE", "Sweden"}, {"PT", "Portugal"}, {"JP", "Japan"}, {"SG", "Singapore"}, {"other", "Other"},
+}
+
+// Signup is the account creation screen.
+templ Signup() {
+	@heading("Create your account", "Start accepting crypto in minutes. No card required.")
+	@mockForm("/2fa/setup") {
+		<div class="grid gap-4 sm:grid-cols-2">
+			@field.Field() {
+				@field.Label(field.LabelProps{For: "name"}) {
+					Full name
+				}
+				@input.Input(input.Props{ID: "name", Name: "name", Placeholder: "Alex Shalaiev", Required: true, Attributes: templ.Attributes{"autocomplete": "name", "autofocus": true}})
+			}
+			@field.Field() {
+				@field.Label(field.LabelProps{For: "org"}) {
+					Organization
+				}
+				@input.Input(input.Props{ID: "org", Name: "org", Placeholder: "Northwind Labs", Required: true, Attributes: templ.Attributes{"autocomplete": "organization"}})
+			}
+		</div>
+		@field.Field() {
+			@field.Label(field.LabelProps{For: "email"}) {
+				Work email
+			}
+			@input.Input(input.Props{ID: "email", Type: "email", Name: "email", Placeholder: "you@company.com", Required: true, Attributes: templ.Attributes{"autocomplete": "email"}})
+			@field.Description() {
+				We will send a verification link here.
+			}
+		}
+		@passwordField("password", "Password", "new-password", nil)
+		@strengthMeter()
+		@field.Field() {
+			@field.Label(field.LabelProps{For: "country"}) {
+				Country of incorporation
+			}
+			@selectcomp.Select(selectcomp.Props{Name: "country", DefaultValue: "DE"}) {
+				@selectcomp.Trigger(selectcomp.TriggerProps{ID: "country", Class: "w-full"}) {
+					@selectcomp.Value()
+				}
+				@selectcomp.Content() {
+					for _, c := range countryOptions {
+						@selectcomp.Item(selectcomp.ItemProps{Value: c.Value}) {
+							{ c.Label }
+						}
+					}
+				}
+			}
+			@field.Description() {
+				Determines which payout rails and tax forms apply.
+			}
+		}
+		<label class="flex items-start gap-2 text-sm">
+			<input type="checkbox" name="terms" required class="accent-primary mt-0.5 size-4 rounded"/>
+			<span class="text-muted-foreground">
+				I agree to the
+				<a href="#" class="text-foreground underline-offset-4 hover:underline">Terms of Service</a>
+				and
+				<a href="#" class="text-foreground underline-offset-4 hover:underline">Privacy Policy</a>.
+			</span>
+		</label>
+		@button.Button(button.Props{Type: button.TypeSubmit, Class: "w-full"}) {
+			Create account
+			@icon.ArrowRight(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-end"}})
+		}
+	}
+	@orDivider("or sign up with")
+	@button.Button(button.Props{Variant: button.VariantOutline, Class: "w-full", Href: "/2fa/setup"}) {
+		@googleMark()
+		Google
+	}
+	<p class="text-muted-foreground mt-6 text-center text-sm">
+		Already have an account?
+		<a href="/login" class="text-foreground font-medium underline-offset-4 hover:underline">Sign in</a>
+	</p>
+}
+
+// strengthMeter is a static password-strength hint bound to the password
+// field by a few lines of inline script.
+templ strengthMeter() {
+	<div class="-mt-2 flex flex-col gap-1.5" data-strength>
+		<div class="grid grid-cols-4 gap-1">
+			for i := 0; i < 4; i++ {
+				<span class="bg-muted h-1 rounded-full transition-colors" data-bar></span>
+			}
+		</div>
+		<span class="text-muted-foreground text-xs" data-label>At least 12 characters with a number and a symbol.</span>
+	</div>
+	<script>
+		(() => {
+			const pw = document.getElementById('password');
+			const box = document.querySelector('[data-strength]');
+			if (!pw || !box) return;
+			const bars = box.querySelectorAll('[data-bar]');
+			const label = box.querySelector('[data-label]');
+			const levels = [
+				['', 'At least 12 characters with a number and a symbol.'],
+				['bg-rose-500', 'Weak · try a longer passphrase'],
+				['bg-amber-500', 'Fair · add a number or symbol'],
+				['bg-emerald-500', 'Good'],
+				['bg-emerald-500', 'Strong'],
+			];
+			pw.addEventListener('input', () => {
+				const v = pw.value;
+				let s = 0;
+				if (v.length >= 8) s++;
+				if (v.length >= 12) s++;
+				if (/\d/.test(v) && /[^\w]/.test(v)) s++;
+				if (/[a-z]/.test(v) && /[A-Z]/.test(v) && v.length >= 14) s++;
+				if (!v) s = 0;
+				bars.forEach((b, i) => {
+					b.className = 'h-1 rounded-full transition-colors ' + (i < s ? levels[s][0] : 'bg-muted');
+				});
+				label.textContent = levels[s][1];
+			});
+		})();
+	</script>
+}
+
+// Verify is the second-factor step after password sign-in.
+templ Verify(v Verify2FA) {
+	<a href="/login" class="text-muted-foreground hover:text-foreground mb-6 inline-flex items-center gap-1.5 text-xs">
+		@icon.ArrowLeft(icon.Props{Class: "size-3.5"})
+		Back to sign in
+	</a>
+	<div class="bg-primary/10 text-primary mb-5 flex size-12 items-center justify-center rounded-2xl">
+		if v.Method == "sms" {
+			@icon.Smartphone(icon.Props{Class: "size-6"})
+		} else {
+			@icon.ShieldCheck(icon.Props{Class: "size-6"})
+		}
+	</div>
+	switch v.Method {
+		case "sms":
+			@heading("Check your phone", "We sent a 6-digit code to "+v.Phone)
+		default:
+			@heading("Two-factor authentication", "Enter the 6-digit code from your authenticator app to finish signing in as "+v.Email)
+	}
+	@mockForm("/dashboard") {
+		@otpInput("code")
+		<label class="flex items-center gap-2 text-sm">
+			<input type="checkbox" name="trust" class="accent-primary size-4 rounded"/>
+			Trust this device for 30 days
+		</label>
+		@button.Button(button.Props{Type: button.TypeSubmit, Class: "w-full"}) {
+			Verify and continue
+		}
+	}
+	<div class="mt-6 flex flex-col gap-2 text-sm">
+		<span class="text-muted-foreground text-xs">Having trouble?</span>
+		@altMethod(icon.ScanFace, "Use a passkey instead", "/dashboard")
+		if v.Method == "sms" {
+			@altMethod(icon.RefreshCw, "Resend code", "#")
+			@altMethod(icon.Smartphone, "Use authenticator app instead", "/verify")
+		} else {
+			@altMethod(icon.Smartphone, "Text a code to "+v.Phone, "/verify?method=sms")
+		}
+		@altMethod(icon.FileKey, "Use a recovery code", "#")
+	</div>
+}
+
+templ altMethod(ic func(...icon.Props) templ.Component, label, href string) {
+	<a href={ templ.SafeURL(href) } class="hover:bg-muted/60 -mx-2 flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors">
+		@ic(icon.Props{Class: "text-muted-foreground size-4"})
+		{ label }
+		@icon.ChevronRight(icon.Props{Class: "text-muted-foreground ml-auto size-4"})
+	</a>
+}
+
+// otpInput is six one-digit boxes that behave like a single field: typing
+// advances, backspace retreats, and a pasted code fills every box.
+templ otpInput(name string) {
+	<fieldset class="flex flex-col gap-2" data-otp>
+		<legend class="sr-only">Verification code</legend>
+		<div class="flex justify-between gap-2">
+			for i := 0; i < 6; i++ {
+				<input
+					type="text"
+					inputmode="numeric"
+					pattern="[0-9]*"
+					maxlength="1"
+					autocomplete={ utils.IfElse(i == 0, "one-time-code", "off") }
+					aria-label={ fmt.Sprintf("Digit %d", i+1) }
+					autofocus?={ i == 0 }
+					required
+					class={ utils.CN(
+						"border-input bg-input/30 focus-visible:border-ring focus-visible:ring-ring/50 h-13 w-full rounded-xl border text-center font-mono text-xl font-semibold tabular-nums outline-none transition-[color,box-shadow] focus-visible:ring-3",
+						utils.IfElse(i == 3, "ml-2", ""),
+					) }
+				/>
+			}
+		</div>
+		<input type="hidden" name={ name }/>
+	</fieldset>
+	<script>
+		(() => {
+			const box = document.querySelector('[data-otp]');
+			if (!box) return;
+			const inputs = [...box.querySelectorAll('input[type=text]')];
+			const hidden = box.querySelector('input[type=hidden]');
+			const sync = () => { hidden.value = inputs.map(i => i.value).join(''); };
+			inputs.forEach((el, i) => {
+				el.addEventListener('input', () => {
+					el.value = el.value.replace(/\D/g, '').slice(-1);
+					if (el.value && i < inputs.length - 1) inputs[i + 1].focus();
+					sync();
+				});
+				el.addEventListener('keydown', (e) => {
+					if (e.key === 'Backspace' && !el.value && i > 0) inputs[i - 1].focus();
+					if (e.key === 'ArrowLeft' && i > 0) inputs[i - 1].focus();
+					if (e.key === 'ArrowRight' && i < inputs.length - 1) inputs[i + 1].focus();
+				});
+				el.addEventListener('paste', (e) => {
+					const digits = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 6);
+					if (!digits) return;
+					e.preventDefault();
+					digits.split('').forEach((d, k) => { if (inputs[k]) inputs[k].value = d; });
+					inputs[Math.min(digits.length, inputs.length) - 1].focus();
+					sync();
+				});
+			});
+		})();
+	</script>
+}
+
+// Setup is the authenticator enrolment step shown after sign-up or when a
+// user turns 2FA on.
+templ Setup(s Setup2FA) {
+	<div class="bg-primary/10 text-primary mb-5 flex size-12 items-center justify-center rounded-2xl" data-wide>
+		@icon.Lock(icon.Props{Class: "size-6"})
+	</div>
+	@heading("Secure your account", "Your organization requires two-factor authentication. Scan the code with any authenticator app, then enter the code it shows.")
+	<ol class="mb-6 grid gap-5 text-sm *:min-w-0">
+		@setupStep(1, "Scan this QR code") {
+			<div class="flex min-w-0 flex-col items-center gap-3 sm:flex-row sm:items-start">
+				<div class="rounded-2xl border bg-white p-3 shadow-sm">
+					<svg viewBox="0 0 29 29" class="size-36" shape-rendering="crispEdges" role="img" aria-label="Authenticator QR code">
+						<rect width="29" height="29" fill="#fff"></rect>
+						<path d={ qrPath(s.OTPAuth, 29) } fill="#0a0a0a"></path>
+					</svg>
+				</div>
+				<div class="flex min-w-0 flex-1 flex-col gap-2">
+					<span class="text-muted-foreground text-xs">Can't scan? Enter this key manually:</span>
+					<div class="bg-muted/50 flex items-center gap-2 rounded-xl px-3 py-2">
+						<span class="truncate font-mono text-xs tracking-wider">{ s.Secret }</span>
+						@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Class: "ml-auto shrink-0", Attributes: templ.Attributes{"aria-label": "Copy key", "onclick": "navigator.clipboard&&navigator.clipboard.writeText(" + fmt.Sprintf("%q", s.Secret) + ")"}}) {
+							@icon.Copy()
+						}
+					</div>
+					<span class="text-muted-foreground text-xs">Works with 1Password, Google Authenticator, Authy and any TOTP app.</span>
+				</div>
+			</div>
+		}
+		@setupStep(2, "Enter the 6-digit code") {
+			@mockForm("/dashboard") {
+				@otpInput("code")
+				@button.Button(button.Props{Type: button.TypeSubmit, Class: "w-full"}) {
+					Turn on two-factor authentication
+				}
+			}
+		}
+	</ol>
+	<div class="flex flex-col gap-2 text-sm">
+		<span class="text-muted-foreground text-xs">Prefer something else?</span>
+		@altMethod(icon.ScanFace, "Register a passkey instead", "/dashboard")
+		@altMethod(icon.Smartphone, "Receive codes by SMS", "/verify?method=sms")
+	</div>
+}
+
+templ setupStep(n int, title string) {
+	<li class="flex gap-3">
+		<span class="bg-muted text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold">{ fmt.Sprint(n) }</span>
+		<div class="flex min-w-0 flex-1 flex-col gap-3">
+			<span class="font-medium leading-6">{ title }</span>
+			{ children... }
+		</div>
+	</li>
+}
+
+// Forgot is the password reset request screen.
+templ Forgot() {
+	<a href="/login" class="text-muted-foreground hover:text-foreground mb-6 inline-flex items-center gap-1.5 text-xs">
+		@icon.ArrowLeft(icon.Props{Class: "size-3.5"})
+		Back to sign in
+	</a>
+	@heading("Reset your password", "Enter your work email and we will send a link to choose a new password.")
+	@mockForm("/login") {
+		@field.Field() {
+			@field.Label(field.LabelProps{For: "email"}) {
+				Work email
+			}
+			@input.Input(input.Props{ID: "email", Type: "email", Name: "email", Placeholder: "you@company.com", Required: true, Attributes: templ.Attributes{"autocomplete": "email", "autofocus": true}})
+		}
+		@button.Button(button.Props{Type: button.TypeSubmit, Class: "w-full"}) {
+			Send reset link
+		}
+	}
+	<p class="text-muted-foreground mt-6 text-xs">If you use single sign-on, reset your password with your identity provider instead.</p>
+}
