@@ -1,0 +1,15 @@
+package pages
+
+import (
+	"templ-app/blocks/dashboard"
+	"templ-app/layouts"
+)
+
+// Wallets is the Wallets page with sample data. sandbox switches to the
+// simulated test dataset. Replace dashboard.WalletsFixture() with real rows in
+// a handler.
+templ Wallets(sandbox bool) {
+	@layouts.Dashboard(shell("Wallets", "/dashboard/wallets", sandbox)) {
+		@dashboard.Wallets(dashboard.WalletsFixture(sandbox))
+	}
+}

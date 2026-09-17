@@ -1,0 +1,442 @@
+---
+title: Crypto Payment Provider · v1.0 · multi-provider / multi-network / multi-asset
+---
+erDiagram
+    %% ───────────────── Identity & access ─────────────────
+    users {
+        uuid id PK
+        citext email UK
+        text password_hash "NULL for social-only"
+        user_status status
+        boolean mfa_required
+    }
+    organizations {
+        uuid id PK
+        citext slug UK
+        text name
+        organization_status status
+        char default_currency
+        boolean require_mfa
+    }
+    organization_members {
+        uuid organization_id PK,FK
+        uuid user_id PK,FK
+        organization_role role
+    }
+    organization_invitations {
+        uuid id PK
+        uuid organization_id FK
+        citext email
+        organization_role role
+        bytea token_hash UK
+    }
+    user_identities {
+        uuid id PK
+        uuid user_id FK
+        auth_provider provider "google, facebook, apple, github, microsoft"
+        text provider_user_id UK
+        citext provider_email
+    }
+    oauth_states {
+        bytea state_hash PK
+        auth_provider provider
+        uuid link_to_user_id FK
+        uuid invitation_id FK
+        timestamptz expires_at
+    }
+    sessions {
+        uuid id PK
+        uuid user_id FK
+        uuid identity_id FK
+        bytea token_hash UK
+        timestamptz mfa_verified_at
+    }
+    user_mfa_methods {
+        uuid id PK
+        uuid user_id FK
+        mfa_method_type type "totp, webauthn, sms, email"
+        bytea credential_id UK
+        boolean is_primary
+        timestamptz verified_at
+    }
+    user_mfa_recovery_codes {
+        uuid id PK
+        uuid user_id FK
+        bytea code_hash UK
+        timestamptz used_at
+    }
+    user_trusted_devices {
+        uuid id PK
+        uuid user_id FK
+        bytea device_token_hash UK
+        timestamptz expires_at
+    }
+    auth_challenges {
+        uuid id PK
+        uuid user_id FK
+        uuid session_id FK
+        uuid identity_id FK
+        uuid method_id FK
+        auth_challenge_purpose purpose
+        bytea token_hash UK
+    }
+    login_attempts {
+        bigserial id PK
+        uuid user_id FK
+        auth_provider provider
+        inet ip_address
+        boolean success
+    }
+    api_keys {
+        uuid id PK
+        uuid organization_id FK
+        bytea key_hash UK
+        text[] scopes
+    }
+    audit_logs {
+        bigserial id PK
+        uuid organization_id FK
+        uuid actor_user_id FK
+        uuid actor_api_key_id FK
+        text action
+    }
+    idempotency_keys {
+        uuid organization_id PK,FK
+        text idempotency_key PK
+    }
+
+    %% ───────────────── Providers · networks · assets ─────────────────
+    payment_providers {
+        smallserial id PK
+        text code UK "tron_rpc, evm_rpc, fireblocks, binance_pay"
+        provider_kind kind "node, custodial_api, exchange_rail"
+        text adapter
+        jsonb config
+        text credentials_ref
+    }
+    networks {
+        smallserial id PK
+        text code UK "tron, ethereum, bsc, polygon, bitcoin, solana"
+        network_family family
+        bigint chain_id
+        text native_symbol
+        int required_confirmations
+        text address_regex
+        text tx_hash_regex
+        boolean supports_memo
+    }
+    provider_networks {
+        smallint provider_id PK,FK
+        smallint network_id PK,FK
+        boolean supports_deposits
+        boolean supports_withdrawals
+        boolean supports_fee_sponsorship
+        smallint priority
+    }
+    assets {
+        smallserial id PK
+        smallint network_id FK
+        text code UK "USDT_TRON, USDT_ETH, BTC"
+        text symbol
+        asset_kind kind
+        text token_standard "trc20, erc20, spl"
+        text contract_address
+        smallint decimals
+        boolean is_stablecoin
+    }
+    provider_assets {
+        smallint provider_id PK,FK
+        smallint asset_id PK,FK
+        text external_asset_id
+    }
+    chain_cursors {
+        smallint provider_id PK,FK
+        smallint network_id PK,FK
+        bigint last_scanned_block
+        text external_cursor
+    }
+    exchange_rates {
+        bigserial id PK
+        smallint base_asset_id FK
+        text quote
+        numeric rate
+        text source
+        timestamptz fetched_at
+    }
+    organization_assets {
+        uuid organization_id PK,FK
+        smallint asset_id PK,FK
+        boolean is_enabled
+        smallint preferred_provider_id FK
+    }
+
+    %% ───────────────── Wallets ─────────────────
+    wallets {
+        uuid id PK
+        smallint provider_id FK
+        smallint network_id FK
+        wallet_kind kind
+        text key_ref "self-custody"
+        text external_wallet_id "custodial vault"
+        text xpub
+    }
+    addresses {
+        uuid id PK
+        smallint network_id FK
+        smallint provider_id FK
+        uuid wallet_id FK
+        uuid organization_id FK
+        text address UK
+        text memo
+        wallet_kind kind
+        bigint derivation_index
+    }
+    address_balances {
+        uuid address_id PK,FK
+        smallint asset_id PK,FK
+        numeric balance
+    }
+
+    %% ───────────────── On-chain ─────────────────
+    transactions {
+        uuid id PK
+        smallint network_id FK
+        smallint provider_id FK
+        text hash UK
+        bigint block_number
+        tx_status status
+        numeric fee_native
+        text external_tx_id
+    }
+    transfers {
+        uuid id PK
+        uuid transaction_id FK
+        smallint asset_id FK
+        uuid address_id FK
+        text from_address
+        text to_address
+        numeric amount
+        transfer_direction direction
+    }
+
+    %% ───────────────── Payments in ─────────────────
+    invoices {
+        uuid id PK
+        uuid organization_id FK
+        text external_id UK
+        text price_currency "USD or asset code"
+        numeric price_amount
+        invoice_status status
+        timestamptz expires_at
+    }
+    invoice_payment_options {
+        uuid id PK
+        uuid invoice_id FK
+        smallint asset_id FK
+        smallint provider_id FK
+        uuid address_id FK
+        numeric amount_due
+        numeric amount_paid
+        numeric exchange_rate
+        bigint rate_id FK
+        boolean is_selected
+    }
+    payments {
+        uuid id PK
+        uuid organization_id FK
+        uuid invoice_id FK
+        uuid option_id FK
+        uuid address_id FK
+        smallint asset_id FK
+        smallint provider_id FK
+        uuid transfer_id UK,FK
+        numeric amount
+        payment_status status
+    }
+
+    %% ───────────────── Payments out ─────────────────
+    withdrawals {
+        uuid id PK
+        uuid organization_id FK
+        smallint asset_id FK
+        smallint provider_id FK
+        text to_address
+        text to_memo
+        numeric amount
+        withdrawal_status status
+        uuid from_address_id FK
+        uuid transaction_id FK
+        uuid approved_by FK
+    }
+    withdrawal_addresses {
+        uuid id PK
+        uuid organization_id FK
+        smallint network_id FK
+        text address
+        boolean is_whitelisted
+    }
+    internal_transfers {
+        uuid id PK
+        internal_transfer_kind kind
+        smallint asset_id FK
+        smallint provider_id FK
+        uuid from_address_id FK
+        uuid to_address_id FK
+        numeric amount
+        uuid transaction_id FK
+    }
+
+    %% ───────────────── Fees & ledger ─────────────────
+    fee_schedules {
+        uuid id PK
+        uuid organization_id FK "NULL = platform default"
+        smallint asset_id FK "NULL = all assets"
+        int deposit_fee_bps
+        int withdrawal_fee_bps
+        boolean pass_network_fee
+    }
+    ledger_accounts {
+        uuid id PK
+        uuid organization_id FK
+        smallint asset_id FK
+        ledger_account_type type
+    }
+    ledger_journals {
+        uuid id PK
+        text event_type
+        text reference_type
+        uuid reference_id
+    }
+    ledger_entries {
+        bigserial id PK
+        uuid journal_id FK
+        uuid account_id FK
+        numeric amount
+    }
+    ledger_balances {
+        uuid account_id PK,FK
+        numeric balance
+    }
+
+    %% ───────────────── Webhooks ─────────────────
+    webhook_endpoints {
+        uuid id PK
+        uuid organization_id FK
+        text url
+        text[] event_types
+    }
+    events {
+        uuid id PK
+        uuid organization_id FK
+        text type
+        uuid resource_id
+        jsonb payload
+    }
+    webhook_deliveries {
+        uuid id PK
+        uuid endpoint_id FK
+        uuid event_id FK
+        webhook_delivery_status status
+        int attempts
+    }
+    provider_webhook_events {
+        bigserial id PK
+        smallint provider_id FK
+        text external_event_id UK
+        jsonb payload
+        timestamptz processed_at
+    }
+
+    %% ═════════════════ Relationships ═════════════════
+    %% identity
+    users          ||--o{ organization_members      : "member of"
+    organizations  ||--o{ organization_members      : "has"
+    organizations  ||--o{ organization_invitations  : "invites"
+    users          ||--o{ user_identities           : "links"
+    user_identities o|--o{ sessions                 : "auth via"
+    users          ||--o{ sessions                  : "logs in"
+    users          o|--o{ oauth_states              : "linking"
+    organization_invitations o|--o{ oauth_states    : "signup via"
+    users          ||--o{ user_mfa_methods          : "enrols"
+    users          ||--o{ user_mfa_recovery_codes   : "backup"
+    users          ||--o{ user_trusted_devices      : "remembers"
+    users          ||--o{ auth_challenges           : "2FA step"
+    sessions       o|--o{ auth_challenges           : "re-verify"
+    user_mfa_methods o|--o{ auth_challenges         : "solved with"
+    users          o|--o{ login_attempts            : "attempts"
+    organizations  ||--o{ api_keys                  : "owns"
+    organizations  o|--o{ audit_logs                : "scope"
+    users          o|--o{ audit_logs                : "actor"
+    api_keys       o|--o{ audit_logs                : "actor"
+    organizations  ||--o{ idempotency_keys          : "dedupe"
+
+    %% rails
+    payment_providers ||--o{ provider_networks      : "serves"
+    networks       ||--o{ provider_networks         : "served by"
+    networks       ||--o{ assets                    : "lists"
+    payment_providers ||--o{ provider_assets        : "supports"
+    assets         ||--o{ provider_assets           : "via"
+    provider_networks ||--|| chain_cursors          : "scan progress"
+    assets         ||--o{ exchange_rates            : "priced"
+    organizations  ||--o{ organization_assets       : "accepts"
+    assets         ||--o{ organization_assets       : "accepted by"
+    payment_providers o|--o{ organization_assets    : "preferred"
+
+    %% wallets
+    provider_networks ||--o{ wallets                : "custody on"
+    wallets        ||--o{ addresses                 : "derives"
+    payment_providers ||--o{ addresses              : "managed by"
+    organizations  o|--o{ addresses                 : "deposit addrs"
+    addresses      ||--o{ address_balances          : "cached"
+    assets         ||--o{ address_balances          : "of"
+
+    %% chain
+    networks       ||--o{ transactions              : "contains"
+    payment_providers ||--o{ transactions           : "observed via"
+    transactions   ||--|{ transfers                 : "emits"
+    assets         ||--o{ transfers                 : "of"
+    addresses      o|--o{ transfers                 : "touches"
+
+    %% inbound
+    organizations  ||--o{ invoices                  : "issues"
+    api_keys       o|--o{ invoices                  : "created by"
+    invoices       ||--|{ invoice_payment_options   : "payable via"
+    assets         ||--o{ invoice_payment_options   : "in asset"
+    payment_providers ||--o{ invoice_payment_options : "routed to"
+    addresses      o|--o{ invoice_payment_options   : "pay to"
+    exchange_rates o|--o{ invoice_payment_options   : "rate used"
+    invoice_payment_options o|--o{ payments         : "settled by"
+    invoices       o|--o{ payments                  : "paid by"
+    organizations  ||--o{ payments                  : "receives"
+    addresses      ||--o{ payments                  : "received on"
+    transfers      ||--o| payments                  : "recognised as"
+
+    %% outbound
+    organizations  ||--o{ withdrawals               : "requests"
+    assets         ||--o{ withdrawals               : "of"
+    payment_providers o|--o{ withdrawals            : "routed via"
+    addresses      o|--o{ withdrawals               : "from hot"
+    transactions   o|--o{ withdrawals               : "broadcast as"
+    users          o|--o{ withdrawals               : "approved by"
+    organizations  ||--o{ withdrawal_addresses      : "allowlists"
+    networks       ||--o{ withdrawal_addresses      : "on"
+    assets         ||--o{ internal_transfers        : "of"
+    payment_providers ||--o{ internal_transfers     : "via"
+    addresses      ||--o{ internal_transfers        : "from / to"
+    transactions   o|--o{ internal_transfers        : "broadcast as"
+
+    %% fees & ledger
+    organizations  o|--o{ fee_schedules             : "override"
+    assets         o|--o{ fee_schedules             : "per asset"
+    organizations  o|--o{ ledger_accounts           : "merchant accts"
+    assets         ||--o{ ledger_accounts           : "denominated"
+    ledger_journals ||--|{ ledger_entries           : "balanced"
+    ledger_accounts ||--o{ ledger_entries           : "posted"
+    ledger_accounts ||--o| ledger_balances          : "running"
+
+    %% webhooks
+    organizations  ||--o{ webhook_endpoints         : "configures"
+    organizations  ||--o{ events                    : "emits"
+    webhook_endpoints ||--o{ webhook_deliveries     : "delivers"
+    events         ||--o{ webhook_deliveries        : "fan-out"
+    payment_providers ||--o{ provider_webhook_events : "callbacks"

@@ -1,0 +1,34 @@
+package layouts
+
+import (
+	"templ-app/components"
+	"templ-app/components/themetoggle"
+)
+
+templ Base(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title }</title>
+			// Preset fonts (JetBrains Mono body, Geist Mono headings); the CSS
+			// variables live in assets/css/globals.css.
+			<link rel="preconnect" href="https://fonts.googleapis.com"/>
+			<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+			<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Geist+Mono:wght@100..900&display=swap"/>
+			<link rel="stylesheet" href="/assets/css/output.css"/>
+			// Applies the stored light/dark preference before first paint.
+			@themetoggle.InitScript()
+			// htmx is the stack's swap layer: blocks like dashboard-01 drive
+			// their partial updates (pagination, lazy drawers) through hx-*
+			// attributes against templ fragments. Swap in your own layer
+			// (Datastar etc.) by translating those attributes.
+			<script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0-beta6/dist/htmx.min.js"></script>
+			@components.Scripts()
+		</head>
+		<body>
+			{ children... }
+		</body>
+	</html>
+}

@@ -1,0 +1,399 @@
+package dashboard
+
+import (
+	"fmt"
+	"strings"
+	"templ-app/components/button"
+	"templ-app/components/card"
+	"templ-app/components/chart"
+	"templ-app/components/dialog"
+	"templ-app/components/dropdownmenu"
+	"templ-app/components/field"
+	"templ-app/components/icon"
+	"templ-app/components/input"
+	"templ-app/components/table"
+	"templ-app/components/tabs"
+	"templ-app/utils"
+)
+
+var deliveryLegend = []chart.Legend{
+	{Name: "Delivered", Color: "var(--chart-1)"},
+	{Name: "Failed", Color: "var(--destructive)"},
+}
+
+var deliveryTabs = []option{
+	{Value: "all", Label: "All"},
+	{Value: "succeeded", Label: "Succeeded"},
+	{Value: "failed", Label: "Failed"},
+}
+
+// Webhooks is the developer webhooks page.
+templ Webhooks(d WebhooksData) {
+	<div class="grid gap-6">
+		@pageHead("Webhooks", "Get notified about payments, refunds and payouts as they happen", d.Sandbox) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.Send(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Send test event
+			}
+			@addEndpointDialog(d)
+		}
+		@statStrip(d.Stats)
+		<div class="grid gap-4 xl:grid-cols-3">
+			<div class="xl:col-span-2">
+				@endpointsCard(d.Endpoints)
+			</div>
+			<div class="grid gap-4">
+				@deliveriesChartCard(d.ByDay)
+				@signingSecretCard(d.Secret)
+			</div>
+		</div>
+		@deliveriesCard(d)
+	</div>
+}
+
+templ endpointsCard(eps []Endpoint) {
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Title() {
+				Endpoints
+			}
+			@card.Description() {
+				Each endpoint receives the events it subscribes to, signed with your secret
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col divide-y"}) {
+			for _, e := range eps {
+				<div class={ utils.CN("flex flex-col gap-2 py-4 first:pt-0 last:pb-0", utils.IfElse(e.Status == EndpointDisabled, "opacity-60", "")) }>
+					<div class="flex items-start gap-3">
+						<span class={ utils.CN("mt-1 flex size-8 shrink-0 items-center justify-center rounded-full", utils.IfElse(e.Status == EndpointFailing, "bg-rose-500/10 text-rose-600 dark:text-rose-400", "bg-muted text-muted-foreground")) }>
+							@icon.Webhook(icon.Props{Class: "size-4"})
+						</span>
+						<div class="flex min-w-0 flex-1 flex-col gap-0.5">
+							<span class="flex flex-wrap items-center gap-2 text-sm">
+								<span class="font-medium">{ e.Description }</span>
+								@pill(string(e.Status), endpointStatusClass(e.Status))
+							</span>
+							@monoValue(e.URL, "text-muted-foreground max-w-full")
+						</div>
+						<div class="hidden flex-col items-end text-xs sm:flex">
+							<span class={ utils.CN("font-medium tabular-nums", utils.IfElse(e.SuccessRate < 90 && e.Status != EndpointDisabled, "text-rose-600 dark:text-rose-400", "")) }>
+								if e.Status == EndpointDisabled {
+									—
+								} else {
+									{ fmt.Sprintf("%.1f%%", e.SuccessRate) }
+								}
+							</span>
+							<span class="text-muted-foreground">last { e.Last }</span>
+						</div>
+						@endpointRowMenu(e)
+					</div>
+					<div class="flex flex-wrap items-center gap-1 pl-11">
+						for _, ev := range e.Events {
+							<span class="bg-muted rounded-full px-2 py-0.5 font-mono text-[10px]">{ utils.IfElse(ev == "*", "all events", ev) }</span>
+						}
+						<span class="text-muted-foreground ml-auto text-[10px]">API { e.Version }</span>
+					</div>
+				</div>
+			}
+		}
+	}
+}
+
+templ endpointRowMenu(e Endpoint) {
+	@dropdownmenu.DropdownMenu() {
+		@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: dropdownmenu.Trigger(ctx)}) {
+			@icon.Ellipsis()
+			<span class="sr-only">Endpoint actions</span>
+		}
+		@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-48"}) {
+			@dropdownmenu.Item() {
+				@icon.Send()
+				Send test event
+			}
+			@dropdownmenu.Item() {
+				@icon.Pencil()
+				Edit endpoint
+			}
+			@dropdownmenu.Item() {
+				@icon.KeyRound()
+				Reveal signing secret
+			}
+			@dropdownmenu.Separator()
+			if e.Status == EndpointDisabled {
+				@dropdownmenu.Item() {
+					@icon.Play()
+					Enable
+				}
+			} else {
+				@dropdownmenu.Item() {
+					@icon.Pause()
+					Disable
+				}
+			}
+			@dropdownmenu.Item(dropdownmenu.ItemProps{Variant: dropdownmenu.ItemVariantDestructive}) {
+				@icon.Trash2()
+				Delete
+			}
+		}
+	}
+}
+
+templ deliveriesChartCard(groups []chart.Group) {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Deliveries by day
+			}
+			@card.Description() {
+				Last 14 days
+			}
+		}
+		@card.Content() {
+			@chart.Bars(chart.BarsProps{Groups: groups, Series: deliveryLegend, Height: "h-36", XLabels: 4})
+		}
+		@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-4 text-xs"}) {
+			for _, l := range deliveryLegend {
+				<span class="flex items-center gap-1.5">
+					@chart.Swatch(l.Color)
+					{ l.Name }
+				</span>
+			}
+		}
+	}
+}
+
+templ signingSecretCard(secret string) {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Signing secret
+			}
+			@card.Description() {
+				Verify the PayChain-Signature header with this secret
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col gap-3"}) {
+			<div class="bg-muted/50 flex items-center gap-2 rounded-xl px-3 py-2">
+				<span class="truncate font-mono text-xs">{ secret }</span>
+				<span class="ml-auto flex shrink-0 gap-0.5">
+					@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Attributes: templ.Attributes{"aria-label": "Reveal secret"}}) {
+						@icon.Eye()
+					}
+					@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Attributes: templ.Attributes{"aria-label": "Copy secret"}}) {
+						@icon.Copy()
+					}
+				</span>
+			</div>
+			<p class="text-muted-foreground text-xs">Rotating creates a new secret and keeps the old one valid for 24 hours so you can roll out without dropped events.</p>
+		}
+		@card.Footer(card.FooterProps{Class: "gap-2"}) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.RefreshCw(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Rotate secret
+			}
+			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm}) {
+				Verification guide
+			}
+		}
+	}
+}
+
+templ deliveriesCard(d WebhooksData) {
+	@card.Card() {
+		@tabs.Tabs(tabs.Props{DefaultValue: "all", Class: "gap-(--card-spacing)"}) {
+			@card.Header(card.HeaderProps{Class: "gap-4"}) {
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<div class="flex flex-col gap-1">
+						@card.Title() {
+							Recent deliveries
+						}
+						@card.Description() {
+							Every attempt with response code and latency
+						}
+					</div>
+					<div class="flex flex-wrap items-center gap-2">
+						@tabs.List() {
+							for _, t := range deliveryTabs {
+								@tabs.Trigger(tabs.TriggerProps{Value: t.Value}) {
+									{ t.Label }
+								}
+							}
+						}
+						@searchBox("Search event ID or type", "sm:w-56")
+					</div>
+				</div>
+			}
+			for _, t := range deliveryTabs {
+				{{ rows := filterDeliveries(d.Deliveries, t.Value) }}
+				@tabs.Content(tabs.ContentProps{Value: t.Value, Class: "gap-(--card-spacing) flex flex-col"}) {
+					@card.Content(card.ContentProps{Class: "px-0"}) {
+						if len(rows) == 0 {
+							@emptyState("No deliveries", "Nothing matches this filter yet.")
+						} else {
+							@deliveriesTable(rows)
+						}
+					}
+					@tableFooter(len(rows), utils.IfElse(t.Value == "all", d.Total, len(rows)), "deliveries")
+				}
+			}
+		}
+	}
+}
+
+templ deliveriesTable(rows []Delivery) {
+	@table.Table() {
+		@table.Header() {
+			@table.Row() {
+				@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+					Event
+				}
+				@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+					Endpoint
+				}
+				@table.Head() {
+					Response
+				}
+				@table.Head(table.HeadProps{Class: "hidden text-right lg:table-cell"}) {
+					Attempts
+				}
+				@table.Head(table.HeadProps{Class: "hidden text-right lg:table-cell"}) {
+					Latency
+				}
+				@table.Head(table.HeadProps{Class: "text-right"}) {
+					Time
+				}
+				@table.Head(table.HeadProps{Class: "w-10 pr-(--card-spacing)"}) {
+					<span class="sr-only">Actions</span>
+				}
+			}
+		}
+		@table.Body() {
+			for _, r := range rows {
+				@table.Row() {
+					@table.Cell(table.CellProps{Class: "pl-(--card-spacing)"}) {
+						<div class="flex items-center gap-2">
+							if r.Pending {
+								@icon.Clock(icon.Props{Class: "size-4 shrink-0 text-amber-600 dark:text-amber-400"})
+							} else if r.OK {
+								@icon.CircleCheck(icon.Props{Class: "size-4 shrink-0 text-emerald-600 dark:text-emerald-400"})
+							} else {
+								@icon.CircleX(icon.Props{Class: "size-4 shrink-0 text-rose-600 dark:text-rose-400"})
+							}
+							<div class="flex flex-col">
+								<span class="font-mono text-xs font-medium">{ r.Event }</span>
+								<span class="text-muted-foreground font-mono text-[10px]">{ r.ID }</span>
+							</div>
+						</div>
+					}
+					@table.Cell(table.CellProps{Class: "text-muted-foreground hidden max-w-56 truncate font-mono text-xs md:table-cell"}) {
+						{ strings.TrimPrefix(r.Endpoint, "https://") }
+					}
+					@table.Cell() {
+						if r.Pending {
+							@pill("retrying", pillWarn)
+						} else if r.OK {
+							@pill(fmt.Sprint(r.Code), pillOK)
+						} else {
+							@pill(fmt.Sprint(r.Code), pillBad)
+						}
+					}
+					@table.Cell(table.CellProps{Class: "text-muted-foreground hidden text-right tabular-nums lg:table-cell"}) {
+						{ fmt.Sprint(r.Attempts) }
+					}
+					@table.Cell(table.CellProps{Class: "text-muted-foreground hidden text-right tabular-nums lg:table-cell"}) {
+						{ r.Latency }
+					}
+					@table.Cell(table.CellProps{Class: "text-muted-foreground text-right text-xs whitespace-nowrap"}) {
+						{ r.Time }
+					}
+					@table.Cell(table.CellProps{Class: "pr-(--card-spacing) text-right"}) {
+						@dropdownmenu.DropdownMenu() {
+							@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: dropdownmenu.Trigger(ctx)}) {
+								@icon.Ellipsis()
+								<span class="sr-only">Actions</span>
+							}
+							@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-44"}) {
+								@dropdownmenu.Item() {
+									@icon.Braces()
+									View payload
+								}
+								@dropdownmenu.Item() {
+									@icon.FileText()
+									View response
+								}
+								@dropdownmenu.Separator()
+								@dropdownmenu.Item() {
+									@icon.RefreshCw()
+									Resend
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+templ addEndpointDialog(d WebhooksData) {
+	@dialog.Dialog() {
+		@button.Button(button.Props{Size: button.SizeSm, Attributes: dialog.Trigger(ctx)}) {
+			@icon.Plus(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+			Add endpoint
+		}
+		@dialog.Content(dialog.ContentProps{Class: "sm:max-w-lg"}) {
+			@dialog.Header() {
+				@dialog.Title() {
+					Add a webhook endpoint
+				}
+				@dialog.Description() {
+					We will POST signed JSON events to this URL and retry failures with backoff for 3 days.
+				}
+			}
+			<form class="grid gap-4" onsubmit="return false">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "wh-url"}) {
+						Endpoint URL
+					}
+					@input.Input(input.Props{ID: "wh-url", Type: "url", Placeholder: "https://example.com/webhooks/paychain", Required: true, Class: "font-mono"})
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "wh-desc"}) {
+						Description
+					}
+					@input.Input(input.Props{ID: "wh-desc", Placeholder: "Optional · what this endpoint is for"})
+				}
+				@field.Field() {
+					@field.Label() {
+						Events to send
+					}
+					<div class="grid max-h-48 gap-1.5 overflow-y-auto rounded-xl border p-3 sm:grid-cols-2">
+						for _, ev := range d.EventTypes {
+							<label class="flex items-center gap-2 font-mono text-xs">
+								<input type="checkbox" name={ "ev-" + ev } class="accent-primary size-4 rounded" checked?={ strings.HasPrefix(ev, "payment.") }/>
+								{ ev }
+							</label>
+						}
+					</div>
+					@field.Description() {
+						<button type="button" class="text-primary underline-offset-4 hover:underline">Select all</button>
+					}
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "wh-version"}) {
+						API version
+					}
+					@fieldSelect("wh-version", []option{{Value: "2026-09-01", Label: "2026-09-01 · current"}, {Value: "2026-03-15", Label: "2026-03-15"}}, "2026-09-01")
+				}
+			</form>
+			@dialog.Footer() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Attributes: dialog.Close(ctx)}) {
+					Cancel
+				}
+				@button.Button() {
+					Add endpoint
+				}
+			}
+		}
+	}
+}

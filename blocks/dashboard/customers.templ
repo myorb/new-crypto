@@ -1,0 +1,232 @@
+package dashboard
+
+import (
+	"fmt"
+	"templ-app/components/avatar"
+	"templ-app/components/button"
+	"templ-app/components/card"
+	"templ-app/components/dialog"
+	"templ-app/components/dropdownmenu"
+	"templ-app/components/field"
+	"templ-app/components/icon"
+	"templ-app/components/input"
+	"templ-app/components/table"
+)
+
+var customerStatusOptions = []option{
+	{Value: "all", Label: "All statuses"},
+	{Value: "active", Label: "Active"},
+	{Value: "new", Label: "New"},
+	{Value: "blocked", Label: "Blocked"},
+}
+
+var sortOptions = []option{
+	{Value: "recent", Label: "Most recent"},
+	{Value: "volume", Label: "Highest volume"},
+	{Value: "payments", Label: "Most payments"},
+	{Value: "name", Label: "Name A–Z"},
+}
+
+// Customers is the customers directory.
+templ Customers(d CustomersData) {
+	<div class="grid gap-6">
+		@pageHead("Customers", "Everyone who has paid you, with lifetime volume and preferred assets", d.Sandbox) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.Download(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Export CSV
+			}
+			@addCustomerDialog()
+		}
+		@statStrip(d.Stats)
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					All customers
+				}
+				@card.Description() {
+					{ fmt.Sprintf("%d customers", d.Total) }
+				}
+				@card.Action(card.ActionProps{Class: "flex flex-wrap gap-2"}) {
+					@searchBox("Search name, email or ID", "sm:w-64")
+					@filterSelect("Status", customerStatusOptions, "all", "sm:w-32")
+					@filterSelect("Sort", sortOptions, "recent", "sm:w-40")
+				}
+			}
+			@card.Content(card.ContentProps{Class: "px-0"}) {
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+								Customer
+							}
+							@table.Head(table.HeadProps{Class: "hidden lg:table-cell"}) {
+								Country
+							}
+							@table.Head(table.HeadProps{Class: "hidden text-right md:table-cell"}) {
+								Payments
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								Lifetime volume
+							}
+							@table.Head(table.HeadProps{Class: "hidden xl:table-cell"}) {
+								Prefers
+							}
+							@table.Head() {
+								Status
+							}
+							@table.Head(table.HeadProps{Class: "hidden text-right sm:table-cell"}) {
+								Last payment
+							}
+							@table.Head(table.HeadProps{Class: "w-10 pr-(--card-spacing)"}) {
+								<span class="sr-only">Actions</span>
+							}
+						}
+					}
+					@table.Body() {
+						for _, c := range d.Customers {
+							@table.Row() {
+								@table.Cell(table.CellProps{Class: "pl-(--card-spacing)"}) {
+									<div class="flex items-center gap-3">
+										@avatar.Avatar(avatar.Props{Size: avatar.SizeSm}) {
+											@avatar.Fallback() {
+												{ c.Initials }
+											}
+										}
+										<div class="flex min-w-0 flex-col">
+											<span class="truncate font-medium">{ c.Name }</span>
+											<span class="text-muted-foreground truncate text-xs">{ c.Email }</span>
+										</div>
+									</div>
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground hidden lg:table-cell"}) {
+									{ c.Country }
+								}
+								@table.Cell(table.CellProps{Class: "hidden text-right tabular-nums md:table-cell"}) {
+									{ fmt.Sprint(c.Payments) }
+								}
+								@table.Cell(table.CellProps{Class: "text-right font-medium tabular-nums"}) {
+									{ c.Volume }
+								}
+								@table.Cell(table.CellProps{Class: "hidden xl:table-cell"}) {
+									<span class="flex items-center gap-2">
+										@tokenIcon(c.Asset, assetColor(c.Asset), "size-5 text-[7px]")
+										{ c.Asset }
+									</span>
+								}
+								@table.Cell() {
+									@pill(string(c.Status), customerStatusClass(c.Status))
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground hidden text-right text-xs whitespace-nowrap sm:table-cell"}) {
+									{ c.Last }
+									<br/>
+									<span class="text-[10px]">since { c.Since }</span>
+								}
+								@table.Cell(table.CellProps{Class: "pr-(--card-spacing) text-right"}) {
+									@dropdownmenu.DropdownMenu() {
+										@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: dropdownmenu.Trigger(ctx)}) {
+											@icon.Ellipsis()
+											<span class="sr-only">Actions</span>
+										}
+										@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-48"}) {
+											@dropdownmenu.Item() {
+												@icon.User()
+												View profile
+											}
+											@dropdownmenu.Item(dropdownmenu.ItemProps{Href: "/dashboard/payments"}) {
+												@icon.ArrowLeftRight()
+												View payments
+											}
+											@dropdownmenu.Item() {
+												@icon.Link()
+												Send payment link
+											}
+											@dropdownmenu.Separator()
+											if c.Status == CustomerBlocked {
+												@dropdownmenu.Item() {
+													@icon.CircleCheck()
+													Unblock
+												}
+											} else {
+												@dropdownmenu.Item(dropdownmenu.ItemProps{Variant: dropdownmenu.ItemVariantDestructive}) {
+													@icon.Ban()
+													Block customer
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			@tableFooter(len(d.Customers), d.Total, "customers")
+		}
+	</div>
+}
+
+var countryOptions = []option{
+	{Value: "DE", Label: "Germany"},
+	{Value: "US", Label: "United States"},
+	{Value: "GB", Label: "United Kingdom"},
+	{Value: "SE", Label: "Sweden"},
+	{Value: "JP", Label: "Japan"},
+	{Value: "SG", Label: "Singapore"},
+	{Value: "other", Label: "Other"},
+}
+
+templ addCustomerDialog() {
+	@dialog.Dialog() {
+		@button.Button(button.Props{Size: button.SizeSm, Attributes: dialog.Trigger(ctx)}) {
+			@icon.UserPlus(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+			Add customer
+		}
+		@dialog.Content() {
+			@dialog.Header() {
+				@dialog.Title() {
+					Add a customer
+				}
+				@dialog.Description() {
+					Customers are also created automatically the first time they pay.
+				}
+			}
+			<form class="grid gap-4" onsubmit="return false">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "cus-name"}) {
+						Name or company
+					}
+					@input.Input(input.Props{ID: "cus-name", Placeholder: "Acme Retail GmbH", Required: true})
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "cus-email"}) {
+						Email
+					}
+					@input.Input(input.Props{ID: "cus-email", Type: "email", Placeholder: "billing@acme.com", Required: true})
+					@field.Description() {
+						Receipts and payment links are sent here.
+					}
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "cus-country"}) {
+						Country
+					}
+					@fieldSelect("cus-country", countryOptions, "DE")
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "cus-ref"}) {
+						Your reference
+					}
+					@input.Input(input.Props{ID: "cus-ref", Placeholder: "Optional internal ID"})
+				}
+			</form>
+			@dialog.Footer() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Attributes: dialog.Close(ctx)}) {
+					Cancel
+				}
+				@button.Button() {
+					Add customer
+				}
+			}
+		}
+	}
+}

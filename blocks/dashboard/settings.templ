@@ -1,0 +1,955 @@
+package dashboard
+
+import (
+	"fmt"
+	"templ-app/components/alertdialog"
+	"templ-app/components/avatar"
+	"templ-app/components/button"
+	"templ-app/components/card"
+	"templ-app/components/dialog"
+	"templ-app/components/dropdownmenu"
+	"templ-app/components/field"
+	"templ-app/components/icon"
+	"templ-app/components/input"
+	"templ-app/components/progress"
+	"templ-app/components/table"
+	"templ-app/components/tabs"
+	"templ-app/components/textarea"
+	"templ-app/utils"
+)
+
+// settingsTabs are the organization settings sections. The key doubles as
+// the ?tab= query value.
+var settingsTabs = []option{
+	{Value: "general", Label: "General"},
+	{Value: "payments", Label: "Payments"},
+	{Value: "team", Label: "Team"},
+	{Value: "billing", Label: "Billing"},
+	{Value: "security", Label: "Security"},
+}
+
+// SettingsTab normalises a ?tab= value to a known section.
+func SettingsTab(tab string) string {
+	return validTab(settingsTabs, tab)
+}
+
+func validTab(opts []option, tab string) string {
+	for _, o := range opts {
+		if o.Value == tab {
+			return tab
+		}
+	}
+	return opts[0].Value
+}
+
+var timezoneOptions = []option{
+	{Value: "Europe/Berlin", Label: "Europe/Berlin (CET)"},
+	{Value: "Europe/London", Label: "Europe/London (GMT)"},
+	{Value: "America/New_York", Label: "America/New_York (ET)"},
+	{Value: "America/Los_Angeles", Label: "America/Los_Angeles (PT)"},
+	{Value: "Asia/Singapore", Label: "Asia/Singapore (SGT)"},
+	{Value: "UTC", Label: "UTC"},
+}
+
+var settlementOptions = []option{
+	{Value: "USD", Label: "US Dollar (USD)"},
+	{Value: "EUR", Label: "Euro (EUR)"},
+	{Value: "GBP", Label: "British Pound (GBP)"},
+	{Value: "USDC", Label: "Keep as USDC"},
+}
+
+var expiryPrefOptions = []option{
+	{Value: "15m", Label: "15 minutes"},
+	{Value: "30m", Label: "30 minutes"},
+	{Value: "1h", Label: "1 hour"},
+	{Value: "24h", Label: "24 hours"},
+}
+
+var roleOptions = []option{
+	{Value: "Admin", Label: "Admin · full access"},
+	{Value: "Developer", Label: "Developer · keys and webhooks"},
+	{Value: "Finance", Label: "Finance · payouts and reports"},
+	{Value: "Support", Label: "Support · read-only payments"},
+}
+
+// roleShortOptions is the compact list used inside the team table.
+var roleShortOptions = []option{
+	{Value: "Admin", Label: "Admin"},
+	{Value: "Developer", Label: "Developer"},
+	{Value: "Finance", Label: "Finance"},
+	{Value: "Support", Label: "Support"},
+}
+
+// Settings is the organization settings page. tab selects the open
+// section (see SettingsTab).
+templ Settings(d SettingsData, tab string) {
+	<div class="grid gap-6">
+		@pageHead("Organization settings", d.Profile.BusinessName+" · business details, payment preferences, team, billing and security policy", d.Sandbox) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Href: "/dashboard/account"}) {
+				@icon.CircleUser(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Your account
+			}
+		}
+		@settingsTabsNav(settingsTabs, SettingsTab(tab)) {
+			@tabs.Content(tabs.ContentProps{Value: "general"}) {
+				@profileSection(d.Profile)
+			}
+			@tabs.Content(tabs.ContentProps{Value: "payments"}) {
+				@paymentsSection(d.Payments)
+			}
+			@tabs.Content(tabs.ContentProps{Value: "team"}) {
+				@teamSection(d.Team)
+			}
+			@tabs.Content(tabs.ContentProps{Value: "billing"}) {
+				@billingSection(d.Billing)
+			}
+			@tabs.Content(tabs.ContentProps{Value: "security"}) {
+				@orgSecuritySection(d)
+			}
+		}
+	</div>
+}
+
+// settingsTabsNav is the underline tab bar shared by both settings pages.
+templ settingsTabsNav(opts []option, active string) {
+	@tabs.Tabs(tabs.Props{DefaultValue: active, Class: "gap-6"}) {
+		<div class="overflow-x-auto border-b">
+			@tabs.List(tabs.ListProps{Variant: tabs.VariantLine, Class: "justify-start"}) {
+				for _, t := range opts {
+					@tabs.Trigger(tabs.TriggerProps{Value: t.Value, Class: "flex-none"}) {
+						{ t.Label }
+					}
+				}
+			}
+		</div>
+		{ children... }
+	}
+}
+
+// sectionCard is a settings card with a save footer.
+templ sectionCard(title, description string) {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				{ title }
+			}
+			@card.Description() {
+				{ description }
+			}
+		}
+		@card.Content() {
+			{ children... }
+		}
+		@card.Footer(card.FooterProps{Class: "justify-end gap-2 border-t"}) {
+			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm}) {
+				Discard
+			}
+			@button.Button(button.Props{Size: button.SizeSm}) {
+				Save changes
+			}
+		}
+	}
+}
+
+templ profileSection(p Profile) {
+	<div class="grid gap-4">
+		@sectionCard("Business profile", "Shown on receipts, checkout pages and customer emails") {
+			<form class="grid gap-6" onsubmit="return false">
+				<div class="flex items-center gap-4">
+					@avatar.Avatar(avatar.Props{Size: avatar.SizeLg, Class: "size-16! rounded-2xl text-lg after:rounded-2xl"}) {
+						@avatar.Fallback(avatar.FallbackProps{Class: "rounded-2xl"}) {
+							{ p.Initials }
+						}
+					}
+					<div class="flex flex-col gap-2">
+						<span class="text-sm font-medium">Logo</span>
+						<div class="flex gap-2">
+							@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+								@icon.Upload(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+								Upload
+							}
+							@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm}) {
+								Remove
+							}
+						</div>
+						<span class="text-muted-foreground text-xs">PNG or SVG, at least 256×256</span>
+					</div>
+				</div>
+				<div class="grid gap-4 md:grid-cols-2">
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "biz-name"}) {
+							Organization name
+						}
+						@input.Input(input.Props{ID: "biz-name", Value: p.BusinessName})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "biz-legal"}) {
+							Legal name
+						}
+						@input.Input(input.Props{ID: "biz-legal", Value: p.LegalName})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "biz-email"}) {
+							Support email
+						}
+						@input.Input(input.Props{ID: "biz-email", Type: "email", Value: p.SupportEmail})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "biz-site"}) {
+							Website
+						}
+						@input.Input(input.Props{ID: "biz-site", Type: "url", Value: p.Website})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "biz-country"}) {
+							Country
+						}
+						@fieldSelect("biz-country", countryOptions, p.Country)
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "biz-tz"}) {
+							Timezone
+						}
+						@fieldSelect("biz-tz", timezoneOptions, p.Timezone)
+					}
+				</div>
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "biz-desc"}) {
+						Statement descriptor
+					}
+					@input.Input(input.Props{ID: "biz-desc", Value: p.Descriptor, Class: "font-mono uppercase", Attributes: templ.Attributes{"maxlength": "22"}})
+					@field.Description() {
+						Appears on customer receipts and bank statements. Up to 22 characters.
+					}
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "biz-address"}) {
+						Business address
+					}
+					@textarea.Textarea(textarea.Props{ID: "biz-address", Rows: 3, Value: "Torstraße 120\n10119 Berlin\nGermany"})
+				}
+			</form>
+		}
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Checkout branding
+				}
+				@card.Description() {
+					Colours and copy on hosted payment pages
+				}
+			}
+			@card.Content(card.ContentProps{Class: "grid gap-4 md:grid-cols-3"}) {
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "brand-color"}) {
+						Accent colour
+					}
+					<div class="flex items-center gap-2">
+						<span class="size-9 shrink-0 rounded-xl border" style="background:#0f766e"></span>
+						@input.Input(input.Props{ID: "brand-color", Value: "#0F766E", Class: "font-mono uppercase"})
+					</div>
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "brand-cta"}) {
+						Button label
+					}
+					@input.Input(input.Props{ID: "brand-cta", Value: "Pay with crypto"})
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "brand-lang"}) {
+						Default language
+					}
+					@fieldSelect("brand-lang", languageOptions, "en")
+				}
+			}
+			@card.Footer(card.FooterProps{Class: "justify-between gap-2 border-t"}) {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+					@icon.Eye(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+					Preview checkout
+				}
+				@button.Button(button.Props{Size: button.SizeSm}) {
+					Save changes
+				}
+			}
+		}
+	</div>
+}
+
+var languageOptions = []option{
+	{Value: "en", Label: "English"},
+	{Value: "de", Label: "Deutsch"},
+	{Value: "es", Label: "Español"},
+	{Value: "pt", Label: "Português"},
+	{Value: "ja", Label: "日本語"},
+}
+
+templ paymentsSection(p PaymentPrefs) {
+	<div class="grid gap-4">
+		@sectionCard("Settlement", "How incoming crypto becomes money in your balance") {
+			<form class="grid gap-4 md:grid-cols-2" onsubmit="return false">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "pref-currency"}) {
+						Settlement currency
+					}
+					@fieldSelect("pref-currency", settlementOptions, p.SettlementCurrency)
+					@field.Description() {
+						Balances and payouts are denominated in this currency.
+					}
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "pref-autoconvert"}) {
+						Auto-convert to settlement currency
+					}
+					<div class="flex items-center gap-3">
+						<input id="pref-autoconvert" type="range" min="0" max="100" value={ p.AutoConvertPct } class="accent-primary flex-1"/>
+						<span class="w-12 text-right text-sm font-medium tabular-nums">{ p.AutoConvertPct }%</span>
+					</div>
+					@field.Description() {
+						The rest stays in crypto. Stablecoins are never converted.
+					}
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "pref-expiry"}) {
+						Payment window
+					}
+					@fieldSelect("pref-expiry", expiryPrefOptions, p.Expiry)
+					@field.Description() {
+						How long a quoted rate stays valid at checkout.
+					}
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "pref-tolerance"}) {
+						Underpayment tolerance
+					}
+					<div class="flex items-center gap-2">
+						@input.Input(input.Props{ID: "pref-tolerance", Type: "number", Value: p.Tolerance, Class: "w-24", Attributes: templ.Attributes{"min": "0", "max": "5", "step": "0.5"}})
+						<span class="text-muted-foreground text-sm">% of the amount due</span>
+					</div>
+					@field.Description() {
+						Payments short by less than this are marked succeeded.
+					}
+				}
+			</form>
+		}
+		<div class="grid gap-4 lg:grid-cols-2">
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Accepted assets
+					}
+					@card.Description() {
+						Assets customers can pay with at checkout
+					}
+				}
+				@card.Content(card.ContentProps{Class: "flex flex-col divide-y"}) {
+					for _, a := range p.Assets {
+						<div class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+							@tokenIcon(a.Symbol, assetColor(a.Symbol), "size-8 text-[9px]")
+							<div class="flex min-w-0 flex-1 flex-col">
+								<span class="text-sm font-medium">{ a.Name } <span class="text-muted-foreground font-normal">{ a.Symbol }</span></span>
+								<span class="text-muted-foreground truncate text-xs">{ a.Networks }</span>
+							</div>
+							@toggle("asset-"+a.Symbol, a.Enabled, "Accept "+a.Symbol)
+						</div>
+					}
+				}
+			}
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Confirmations required
+					}
+					@card.Description() {
+						When a payment counts as final on each network
+					}
+				}
+				@card.Content(card.ContentProps{Class: "px-0"}) {
+					@table.Table() {
+						@table.Header() {
+							@table.Row() {
+								@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+									Network
+								}
+								@table.Head(table.HeadProps{Class: "text-right"}) {
+									Confirmations
+								}
+								@table.Head(table.HeadProps{Class: "pr-(--card-spacing) text-right"}) {
+									Typical wait
+								}
+							}
+						}
+						@table.Body() {
+							for _, n := range p.Networks {
+								@table.Row() {
+									@table.Cell(table.CellProps{Class: "pl-(--card-spacing) font-medium"}) {
+										{ n.Name }
+									}
+									@table.Cell(table.CellProps{Class: "text-right"}) {
+										@input.Input(input.Props{Type: "number", Value: n.Confirmations, Class: "ml-auto h-7 w-20 text-right tabular-nums", Attributes: templ.Attributes{"min": "0", "aria-label": n.Name + " confirmations"}})
+									}
+									@table.Cell(table.CellProps{Class: "text-muted-foreground pr-(--card-spacing) text-right text-xs"}) {
+										{ n.Typical }
+									}
+								}
+							}
+						}
+					}
+				}
+				@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-2 border-t text-xs"}) {
+					@icon.Info(icon.Props{Class: "size-3.5"})
+					Lower values speed up checkout but raise reorg risk.
+				}
+			}
+		</div>
+	</div>
+}
+
+templ teamSection(team []TeamMember) {
+	<div class="grid gap-4">
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Members
+				}
+				@card.Description() {
+					{ fmt.Sprintf("%d people have access to this organization. Roles limit what they can see and do.", len(team)) }
+				}
+				@card.Action() {
+					@inviteDialog()
+				}
+			}
+			@card.Content(card.ContentProps{Class: "px-0"}) {
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+								Member
+							}
+							@table.Head() {
+								Role
+							}
+							@table.Head(table.HeadProps{Class: "hidden sm:table-cell"}) {
+								Status
+							}
+							@table.Head(table.HeadProps{Class: "hidden text-right md:table-cell"}) {
+								Last active
+							}
+							@table.Head(table.HeadProps{Class: "w-10 pr-(--card-spacing)"}) {
+								<span class="sr-only">Actions</span>
+							}
+						}
+					}
+					@table.Body() {
+						for _, m := range team {
+							@table.Row() {
+								@table.Cell(table.CellProps{Class: "pl-(--card-spacing)"}) {
+									<div class="flex items-center gap-3">
+										@avatar.Avatar(avatar.Props{Size: avatar.SizeSm}) {
+											@avatar.Fallback() {
+												{ m.Initials }
+											}
+										}
+										<div class="flex min-w-0 flex-col">
+											<span class="flex items-center gap-2 truncate font-medium">
+												{ m.Name }
+												if m.You {
+													<span class="bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 text-[10px]">You</span>
+												}
+											</span>
+											<span class="text-muted-foreground truncate text-xs">{ m.Email }</span>
+										</div>
+									</div>
+								}
+								@table.Cell() {
+									if m.Role == "Owner" {
+										<span class="flex items-center gap-1.5 text-sm">
+											@icon.Crown(icon.Props{Class: "size-3.5 text-amber-500"})
+											Owner
+										</span>
+									} else {
+										@filterSelect("Role", roleShortOptions, m.Role, "sm:w-36")
+									}
+								}
+								@table.Cell(table.CellProps{Class: "hidden sm:table-cell"}) {
+									@pill(m.Status, utils.IfElse(m.Status == "active", pillOK, pillWarn))
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground hidden text-right text-xs whitespace-nowrap md:table-cell"}) {
+									{ m.Last }
+								}
+								@table.Cell(table.CellProps{Class: "pr-(--card-spacing) text-right"}) {
+									if !m.You {
+										@dropdownmenu.DropdownMenu() {
+											@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: dropdownmenu.Trigger(ctx)}) {
+												@icon.Ellipsis()
+												<span class="sr-only">Actions</span>
+											}
+											@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-48"}) {
+												if m.Status == "invited" {
+													@dropdownmenu.Item() {
+														@icon.Mail()
+														Resend invite
+													}
+												} else {
+													@dropdownmenu.Item() {
+														@icon.Crown()
+														Transfer ownership
+													}
+													@dropdownmenu.Item() {
+														@icon.KeyRound()
+														Reset 2FA
+													}
+												}
+												@dropdownmenu.Separator()
+												@dropdownmenu.Item(dropdownmenu.ItemProps{Variant: dropdownmenu.ItemVariantDestructive}) {
+													@icon.UserMinus()
+													Remove from organization
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-2 border-t text-xs"}) {
+				@icon.Shield(icon.Props{Class: "size-3.5"})
+				Two-factor authentication is required for every member. Change this under Security.
+			}
+		}
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Roles
+				}
+				@card.Description() {
+					What each role can do in this organization
+				}
+			}
+			@card.Content(card.ContentProps{Class: "grid gap-3 sm:grid-cols-2 xl:grid-cols-4"}) {
+				@roleCard("Admin", "Everything except billing and closing the organization", []string{"Manage members", "Payouts", "API keys & webhooks"})
+				@roleCard("Developer", "Build and test the integration", []string{"API keys & webhooks", "Sandbox", "Read payments"})
+				@roleCard("Finance", "Move money and reconcile", []string{"Payouts & destinations", "Reports & exports", "Read payments"})
+				@roleCard("Support", "Help customers without touching funds", []string{"Read payments & customers", "Send receipts", "Issue refunds ≤ $500"})
+			}
+		}
+	</div>
+}
+
+templ roleCard(name, desc string, perms []string) {
+	<div class="bg-muted/40 flex flex-col gap-2 rounded-2xl p-4">
+		<span class="text-sm font-medium">{ name }</span>
+		<span class="text-muted-foreground text-xs">{ desc }</span>
+		<ul class="mt-1 flex flex-col gap-1 text-xs">
+			for _, p := range perms {
+				<li class="flex items-center gap-1.5">
+					@icon.Check(icon.Props{Class: "size-3 text-emerald-600 dark:text-emerald-400"})
+					{ p }
+				</li>
+			}
+		</ul>
+	</div>
+}
+
+templ inviteDialog() {
+	@dialog.Dialog() {
+		@button.Button(button.Props{Size: button.SizeSm, Attributes: dialog.Trigger(ctx)}) {
+			@icon.UserPlus(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+			Invite
+		}
+		@dialog.Content() {
+			@dialog.Header() {
+				@dialog.Title() {
+					Invite a team member
+				}
+				@dialog.Description() {
+					They will get an email with a link that expires in 7 days.
+				}
+			}
+			<form class="grid gap-4" onsubmit="return false">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "invite-email"}) {
+						Email
+					}
+					@input.Input(input.Props{ID: "invite-email", Type: "email", Placeholder: "name@company.com", Required: true})
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "invite-role"}) {
+						Role
+					}
+					@fieldSelect("invite-role", roleOptions, "Developer")
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "invite-note"}) {
+						Personal note
+					}
+					@textarea.Textarea(textarea.Props{ID: "invite-note", Rows: 2, Placeholder: "Optional"})
+				}
+			</form>
+			@dialog.Footer() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Attributes: dialog.Close(ctx)}) {
+					Cancel
+				}
+				@button.Button() {
+					Send invite
+				}
+			}
+		}
+	}
+}
+
+templ billingSection(b Billing) {
+	<div class="grid gap-4">
+		<div class="grid gap-4 lg:grid-cols-3">
+			@card.Card(card.Props{Class: "lg:col-span-2"}) {
+				@card.Header() {
+					@card.Description() {
+						Current plan
+					}
+					@card.Title(card.TitleProps{Class: "flex items-center gap-3 text-2xl font-semibold tracking-tight"}) {
+						{ b.Plan }
+						@pill("active", pillOK)
+					}
+					@card.Action(card.ActionProps{Class: "flex gap-2"}) {
+						@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+							Compare plans
+						}
+						@button.Button(button.Props{Size: button.SizeSm}) {
+							@icon.Sparkles(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+							Upgrade
+						}
+					}
+				}
+				@card.Content(card.ContentProps{Class: "flex flex-col gap-5"}) {
+					<dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+						@statRow("Price", b.Price, "Billed monthly")
+						@statRow("Renews", b.Renews, "Auto-renew on")
+						@statRow("Processing fee", b.FeeRate, "Volume-tiered")
+					</dl>
+					@progress.Progress(progress.Props{Value: b.VolumePct, Class: "gap-2"}) {
+						@progress.Label(progress.LabelProps{Class: "text-muted-foreground text-xs font-normal"}) {
+							{ b.VolumeUsed } of { b.VolumeIncl } included monthly volume
+						}
+						@progress.Value(progress.ValueProps{Class: "text-xs"})
+					}
+					@progress.Progress(progress.Props{Value: b.SeatsUsed, Max: b.SeatsIncl, Class: "gap-2"}) {
+						@progress.Label(progress.LabelProps{Class: "text-muted-foreground text-xs font-normal"}) {
+							{ fmt.Sprintf("%d of %d seats used", b.SeatsUsed, b.SeatsIncl) }
+						}
+						@progress.Value(progress.ValueProps{Class: "text-xs"})
+					}
+				}
+				@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-2 text-xs"}) {
+					@icon.Info(icon.Props{Class: "size-3.5"})
+					Volume above the included amount is billed at 0.35% on the next invoice.
+				}
+			}
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Payment method
+					}
+					@card.Description() {
+						Charged on each renewal
+					}
+				}
+				@card.Content(card.ContentProps{Class: "flex flex-col gap-4"}) {
+					<div class="bg-muted/50 flex items-center gap-3 rounded-xl p-3">
+						<span class="bg-background flex h-8 w-11 items-center justify-center rounded-md border text-[10px] font-bold">{ b.CardBrand }</span>
+						<div class="flex flex-col text-sm">
+							<span class="font-medium">•••• { b.CardLast4 }</span>
+							<span class="text-muted-foreground text-xs">Expires { b.CardExpiry }</span>
+						</div>
+						@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeXs, Class: "ml-auto"}) {
+							Change
+						}
+					</div>
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "billing-email"}) {
+							Billing email
+						}
+						@input.Input(input.Props{ID: "billing-email", Type: "email", Value: b.BillingEmail})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "billing-vat"}) {
+							VAT ID
+						}
+						@input.Input(input.Props{ID: "billing-vat", Value: "DE 812 345 678", Class: "font-mono"})
+					}
+				}
+				@card.Footer(card.FooterProps{Class: "justify-end border-t"}) {
+					@button.Button(button.Props{Size: button.SizeSm}) {
+						Save
+					}
+				}
+			}
+		</div>
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Invoices
+				}
+				@card.Description() {
+					Subscription and processing fee invoices
+				}
+			}
+			@card.Content(card.ContentProps{Class: "px-0"}) {
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+								Invoice
+							}
+							@table.Head() {
+								Period
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								Amount
+							}
+							@table.Head() {
+								Status
+							}
+							@table.Head(table.HeadProps{Class: "hidden text-right sm:table-cell"}) {
+								Date
+							}
+							@table.Head(table.HeadProps{Class: "w-10 pr-(--card-spacing)"}) {
+								<span class="sr-only">Download</span>
+							}
+						}
+					}
+					@table.Body() {
+						for _, inv := range b.Invoices {
+							@table.Row() {
+								@table.Cell(table.CellProps{Class: "pl-(--card-spacing) font-mono text-xs"}) {
+									{ inv.Number }
+								}
+								@table.Cell() {
+									{ inv.Period }
+								}
+								@table.Cell(table.CellProps{Class: "text-right font-medium tabular-nums"}) {
+									{ inv.Amount }
+								}
+								@table.Cell() {
+									@pill(inv.Status, utils.IfElse(inv.Status == "paid", pillOK, pillWarn))
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground hidden text-right text-xs whitespace-nowrap sm:table-cell"}) {
+									{ inv.Date }
+								}
+								@table.Cell(table.CellProps{Class: "pr-(--card-spacing) text-right"}) {
+									@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: templ.Attributes{"aria-label": "Download invoice"}}) {
+										@icon.Download()
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	</div>
+}
+
+templ orgSecuritySection(d SettingsData) {
+	{{ s := d.Security }}
+	<div class="grid gap-4">
+		<div class="grid gap-4 lg:grid-cols-2">
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Access policy
+					}
+					@card.Description() {
+						Rules every member of { d.Profile.BusinessName } must follow
+					}
+				}
+				@card.Content(card.ContentProps{Class: "flex flex-col divide-y"}) {
+					@policyRow("Require two-factor authentication", "Members without 2FA are locked out until they set it up", "req-2fa", s.Require2FA)
+					@policyRow("Second approver for payouts", "Payouts above $10,000 need approval from another Admin or Finance member", "payout-approvals", s.PayoutApprovals)
+					@policyRow("Single sign-on (SAML)", utils.IfElse(s.SSOEnabled, "Connected to "+s.SSOProvider, "Not connected · available on Business plan"), "sso", s.SSOEnabled)
+					<div class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+						<div class="flex min-w-0 flex-1 flex-col">
+							<span class="text-sm font-medium">Session timeout</span>
+							<span class="text-muted-foreground text-xs">Members are signed out after this much inactivity</span>
+						</div>
+						@filterSelect("Timeout", []option{{Value: "1h", Label: "1 hour"}, {Value: "12h", Label: "12 hours"}, {Value: "24h", Label: "24 hours"}, {Value: "7d", Label: "7 days"}}, s.SessionTimeout, "sm:w-32")
+					</div>
+				}
+				@card.Footer(card.FooterProps{Class: "justify-end gap-2 border-t"}) {
+					@button.Button(button.Props{Size: button.SizeSm}) {
+						Save policy
+					}
+				}
+			}
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Dashboard IP allowlist
+					}
+					@card.Description() {
+						Only these networks can sign in to the dashboard. API keys have their own allowlists.
+					}
+					@card.Action() {
+						@toggle("ip-allowlist", len(s.IPAllowlist) > 0, "IP allowlist")
+					}
+				}
+				@card.Content(card.ContentProps{Class: "flex flex-col gap-3"}) {
+					for _, ip := range s.IPAllowlist {
+						<div class="bg-muted/50 flex items-center gap-2 rounded-xl px-3 py-2">
+							<span class="font-mono text-xs">{ ip }</span>
+							@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Class: "ml-auto", Attributes: templ.Attributes{"aria-label": "Remove"}}) {
+								@icon.X()
+							}
+						</div>
+					}
+					<div class="flex gap-2">
+						@input.Input(input.Props{Placeholder: "203.0.113.0/24", Class: "font-mono", Attributes: templ.Attributes{"aria-label": "New CIDR"}})
+						@button.Button(button.Props{Variant: button.VariantOutline}) {
+							Add
+						}
+					</div>
+				}
+				@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-2 text-xs"}) {
+					@icon.TriangleAlert(icon.Props{Class: "size-3.5 text-amber-500"})
+					Your current address 84.132.10.12 is covered.
+				}
+			}
+		</div>
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Audit log
+				}
+				@card.Description() {
+					Who changed what across the organization, kept for 2 years
+				}
+				@card.Action() {
+					@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+						@icon.Download(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+						Export
+					}
+				}
+			}
+			@card.Content(card.ContentProps{Class: "px-0"}) {
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+								Actor
+							}
+							@table.Head() {
+								Action
+							}
+							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+								Target
+							}
+							@table.Head(table.HeadProps{Class: "pr-(--card-spacing) text-right"}) {
+								When
+							}
+						}
+					}
+					@table.Body() {
+						for _, e := range s.AuditLog {
+							@table.Row() {
+								@table.Cell(table.CellProps{Class: "pl-(--card-spacing) font-medium"}) {
+									{ e.Actor }
+								}
+								@table.Cell() {
+									{ e.Action }
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground hidden font-mono text-xs md:table-cell"}) {
+									{ e.Target }
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground pr-(--card-spacing) text-right text-xs whitespace-nowrap"}) {
+									{ e.Time }
+								}
+							}
+						}
+					}
+				}
+			}
+			@card.Footer(card.FooterProps{Class: "justify-end border-t"}) {
+				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm}) {
+					View full log
+					@icon.ChevronRight(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-end"}})
+				}
+			}
+		}
+		@dangerZone(d.Profile.BusinessName)
+	</div>
+}
+
+templ policyRow(label, desc, name string, on bool) {
+	<div class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+		<div class="flex min-w-0 flex-1 flex-col">
+			<span class="text-sm font-medium">{ label }</span>
+			<span class="text-muted-foreground text-xs">{ desc }</span>
+		</div>
+		@toggle(name, on, label)
+	</div>
+}
+
+templ dangerZone(org string) {
+	@card.Card(card.Props{Class: "border-destructive/30"}) {
+		@card.Header() {
+			@card.Title(card.TitleProps{Class: "text-destructive"}) {
+				Danger zone
+			}
+			@card.Description() {
+				These actions are permanent and affect every member of { org }
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col divide-y"}) {
+			<div class="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0">
+				<div class="flex min-w-0 flex-1 flex-col">
+					<span class="text-sm font-medium">Export all data</span>
+					<span class="text-muted-foreground text-xs">Payments, customers, payouts and webhook logs as CSV and JSON</span>
+				</div>
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+					Request export
+				}
+			</div>
+			<div class="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0">
+				<div class="flex min-w-0 flex-1 flex-col">
+					<span class="text-sm font-medium">Transfer ownership</span>
+					<span class="text-muted-foreground text-xs">Hand the Owner role to another Admin. You stay on as Admin.</span>
+				</div>
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+					Transfer
+				}
+			</div>
+			<div class="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0">
+				<div class="flex min-w-0 flex-1 flex-col">
+					<span class="text-sm font-medium">Close organization</span>
+					<span class="text-muted-foreground text-xs">Pays out remaining balances, revokes keys and disables all endpoints</span>
+				</div>
+				@alertdialog.AlertDialog() {
+					@button.Button(button.Props{Variant: button.VariantDestructive, Size: button.SizeSm, Attributes: alertdialog.Trigger(ctx)}) {
+						Close organization
+					}
+					@alertdialog.Content(alertdialog.ContentProps{Size: alertdialog.SizeSm}) {
+						@alertdialog.Header() {
+							@alertdialog.Media() {
+								@icon.TriangleAlert()
+							}
+							@alertdialog.Title() {
+								Close { org }?
+							}
+							@alertdialog.Description() {
+								Your remaining balance is paid out to the default destination, API keys stop working and hosted payment links go offline. This cannot be undone.
+							}
+						}
+						@alertdialog.Footer() {
+							@alertdialog.Cancel() {
+								Keep organization
+							}
+							@alertdialog.Action(alertdialog.ActionProps{Variant: button.VariantDestructive}) {
+								Close organization
+							}
+						}
+					}
+				}
+			</div>
+		}
+	}
+}

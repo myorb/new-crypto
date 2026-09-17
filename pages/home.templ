@@ -1,0 +1,16 @@
+package pages
+
+import (
+	"templ-app/components/componentexample"
+	"templ-app/components/themetoggle"
+	"templ-app/layouts"
+)
+
+templ Home() {
+	@layouts.Base("templ-app") {
+		<div class="fixed top-4 right-4 z-50">
+			@themetoggle.ModeToggle()
+		</div>
+		@componentexample.ComponentExample()
+	}
+}

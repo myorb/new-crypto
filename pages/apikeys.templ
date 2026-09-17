@@ -1,0 +1,15 @@
+package pages
+
+import (
+	"templ-app/blocks/dashboard"
+	"templ-app/layouts"
+)
+
+// APIKeys is the API keys page with sample data. sandbox switches to the
+// simulated test dataset. Replace dashboard.APIKeysFixture() with real rows in
+// a handler.
+templ APIKeys(sandbox bool) {
+	@layouts.Dashboard(shell("API keys", "/dashboard/api-keys", sandbox)) {
+		@dashboard.APIKeys(dashboard.APIKeysFixture(sandbox))
+	}
+}

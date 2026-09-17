@@ -1,0 +1,520 @@
+package dashboard
+
+import (
+	"fmt"
+	"templ-app/components/alertdialog"
+	"templ-app/components/avatar"
+	"templ-app/components/button"
+	"templ-app/components/card"
+	"templ-app/components/dropdownmenu"
+	"templ-app/components/field"
+	"templ-app/components/icon"
+	"templ-app/components/input"
+	"templ-app/components/table"
+	"templ-app/components/tabs"
+	"templ-app/utils"
+)
+
+// accountTabs are the personal account sections.
+var accountTabs = []option{
+	{Value: "profile", Label: "Profile"},
+	{Value: "security", Label: "Security"},
+	{Value: "notifications", Label: "Notifications"},
+	{Value: "organizations", Label: "Organizations"},
+}
+
+// AccountTab normalises a ?tab= value to a known section.
+func AccountTab(tab string) string {
+	return validTab(accountTabs, tab)
+}
+
+// Account is the personal account page: things that follow the signed-in
+// person across organizations.
+templ Account(d AccountData, tab string) {
+	<div class="grid gap-6">
+		@pageHead("Your account", d.User.Email+" · profile, sign-in security and how you get notified", d.Sandbox) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Href: "/dashboard/settings"}) {
+				@icon.Building2(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Organization settings
+			}
+		}
+		@settingsTabsNav(accountTabs, AccountTab(tab)) {
+			@tabs.Content(tabs.ContentProps{Value: "profile"}) {
+				@accountProfile(d.User)
+			}
+			@tabs.Content(tabs.ContentProps{Value: "security"}) {
+				@accountSecurity(d)
+			}
+			@tabs.Content(tabs.ContentProps{Value: "notifications"}) {
+				@notificationsSection(d.Notifications)
+			}
+			@tabs.Content(tabs.ContentProps{Value: "organizations"}) {
+				@accountOrgs(d.Orgs)
+			}
+		}
+	</div>
+}
+
+templ accountProfile(u UserProfile) {
+	<div class="grid gap-4">
+		@sectionCard("Profile", "How you appear to teammates and in the audit log") {
+			<form class="grid gap-6" onsubmit="return false">
+				<div class="flex items-center gap-4">
+					@avatar.Avatar(avatar.Props{Size: avatar.SizeLg, Class: "size-16! text-lg"}) {
+						@avatar.Fallback() {
+							{ u.Initials }
+						}
+					}
+					<div class="flex flex-col gap-2">
+						<span class="text-sm font-medium">Photo</span>
+						<div class="flex gap-2">
+							@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+								@icon.Upload(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+								Upload
+							}
+							@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm}) {
+								Remove
+							}
+						</div>
+						<span class="text-muted-foreground text-xs">JPG or PNG, at least 256×256</span>
+					</div>
+				</div>
+				<div class="grid gap-4 md:grid-cols-2">
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "me-name"}) {
+							Full name
+						}
+						@input.Input(input.Props{ID: "me-name", Value: u.Name})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "me-email"}) {
+							Email
+						}
+						@input.Input(input.Props{ID: "me-email", Type: "email", Value: u.Email})
+						@field.Description() {
+							Used to sign in. Changing it requires confirmation from both addresses.
+						}
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "me-phone"}) {
+							Phone
+						}
+						@input.Input(input.Props{ID: "me-phone", Type: "tel", Value: u.Phone})
+						@field.Description() {
+							Only used for account recovery.
+						}
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "me-lang"}) {
+							Language
+						}
+						@fieldSelect("me-lang", languageOptions, u.Language)
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "me-tz"}) {
+							Timezone
+						}
+						@fieldSelect("me-tz", timezoneOptions, u.Timezone)
+						@field.Description() {
+							Times across the dashboard are shown in this zone.
+						}
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "me-theme"}) {
+							Appearance
+						}
+						@fieldSelect("me-theme", []option{{Value: "system", Label: "Match system"}, {Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"}}, "system")
+					}
+				</div>
+			</form>
+		}
+	</div>
+}
+
+templ accountSecurity(d AccountData) {
+	<div class="grid gap-4">
+		<div class="grid gap-4 lg:grid-cols-2">
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Two-factor authentication
+					}
+					@card.Description() {
+						Protects sign-in and sensitive actions like payouts and key creation
+					}
+					@card.Action() {
+						@toggle("2fa", d.TwoFactor, "Two-factor authentication")
+					}
+				}
+				@card.Content(card.ContentProps{Class: "flex flex-col divide-y"}) {
+					@securityRow(icon.Smartphone, "Authenticator app", "Enabled · Google Authenticator", true)
+					@securityRow(icon.MessageSquare, "SMS backup", "Not set up", false)
+					@securityRow(icon.FileKey, "Recovery codes", "8 of 10 unused", true)
+				}
+				@card.Footer(card.FooterProps{Class: "gap-2"}) {
+					@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+						View recovery codes
+					}
+					@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm}) {
+						Regenerate
+					}
+				}
+			}
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Passkeys
+					}
+					@card.Description() {
+						Sign in with Touch ID, Face ID or a security key instead of a password
+					}
+					@card.Action() {
+						@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+							@icon.Plus(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+							Add passkey
+						}
+					}
+				}
+				@card.Content(card.ContentProps{Class: "flex flex-col divide-y"}) {
+					for _, k := range d.Passkeys {
+						<div class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+							<span class="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full">
+								@icon.ScanFace(icon.Props{Class: "size-4"})
+							</span>
+							<div class="flex min-w-0 flex-1 flex-col">
+								<span class="text-sm font-medium">{ k.Name }</span>
+								<span class="text-muted-foreground text-xs">Added { k.Created } · last used { k.Last }</span>
+							</div>
+							@dropdownmenu.DropdownMenu() {
+								@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: dropdownmenu.Trigger(ctx)}) {
+									@icon.Ellipsis()
+									<span class="sr-only">Passkey actions</span>
+								}
+								@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-40"}) {
+									@dropdownmenu.Item() {
+										@icon.Pencil()
+										Rename
+									}
+									@dropdownmenu.Item(dropdownmenu.ItemProps{Variant: dropdownmenu.ItemVariantDestructive}) {
+										@icon.Trash2()
+										Remove
+									}
+								}
+							}
+						</div>
+					}
+				}
+			}
+		</div>
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Password
+				}
+				@card.Description() {
+					Last changed { d.PasswordAge }
+				}
+			}
+			@card.Content() {
+				<form class="grid gap-4 md:grid-cols-3" onsubmit="return false">
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "pw-current"}) {
+							Current password
+						}
+						@input.Input(input.Props{ID: "pw-current", Type: "password", Attributes: templ.Attributes{"autocomplete": "current-password"}})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "pw-new"}) {
+							New password
+						}
+						@input.Input(input.Props{ID: "pw-new", Type: "password", Attributes: templ.Attributes{"autocomplete": "new-password"}})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "pw-confirm"}) {
+							Confirm new password
+						}
+						@input.Input(input.Props{ID: "pw-confirm", Type: "password", Attributes: templ.Attributes{"autocomplete": "new-password"}})
+					}
+				</form>
+			}
+			@card.Footer(card.FooterProps{Class: "justify-between gap-2 border-t"}) {
+				<span class="text-muted-foreground text-xs">At least 12 characters. A passphrase works well.</span>
+				@button.Button(button.Props{Size: button.SizeSm}) {
+					Update password
+				}
+			}
+		}
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Active sessions
+				}
+				@card.Description() {
+					Devices currently signed in as you
+				}
+				@card.Action() {
+					@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+						Sign out all other sessions
+					}
+				}
+			}
+			@card.Content(card.ContentProps{Class: "px-0"}) {
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+								Device
+							}
+							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+								Location
+							}
+							@table.Head(table.HeadProps{Class: "hidden lg:table-cell"}) {
+								IP address
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								Last active
+							}
+							@table.Head(table.HeadProps{Class: "w-24 pr-(--card-spacing)"}) {
+								<span class="sr-only">Actions</span>
+							}
+						}
+					}
+					@table.Body() {
+						for _, s := range d.Sessions {
+							@table.Row() {
+								@table.Cell(table.CellProps{Class: "pl-(--card-spacing)"}) {
+									<div class="flex items-center gap-3">
+										<span class="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full">
+											if s.Device == "iPhone 17" {
+												@icon.Smartphone(icon.Props{Class: "size-4"})
+											} else {
+												@icon.Monitor(icon.Props{Class: "size-4"})
+											}
+										</span>
+										<div class="flex flex-col">
+											<span class="flex items-center gap-2 font-medium">
+												{ s.Device }
+												if s.Current {
+													<span class="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 rounded-full px-1.5 py-0.5 text-[10px] font-medium">This device</span>
+												}
+											</span>
+											<span class="text-muted-foreground text-xs">{ s.Browser }</span>
+										</div>
+									</div>
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground hidden md:table-cell"}) {
+									{ s.Location }
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground hidden font-mono text-xs lg:table-cell"}) {
+									{ s.IP }
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground text-right text-xs whitespace-nowrap"}) {
+									{ s.Last }
+								}
+								@table.Cell(table.CellProps{Class: "pr-(--card-spacing) text-right"}) {
+									if !s.Current {
+										@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeXs}) {
+											Sign out
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		@card.Card(card.Props{Class: "border-destructive/30"}) {
+			@card.Header() {
+				@card.Title(card.TitleProps{Class: "text-destructive"}) {
+					Delete account
+				}
+				@card.Description() {
+					Removes you from every organization. Organizations you own must be transferred or closed first.
+				}
+				@card.Action() {
+					@alertdialog.AlertDialog() {
+						@button.Button(button.Props{Variant: button.VariantDestructive, Size: button.SizeSm, Attributes: alertdialog.Trigger(ctx)}) {
+							Delete my account
+						}
+						@alertdialog.Content(alertdialog.ContentProps{Size: alertdialog.SizeSm}) {
+							@alertdialog.Header() {
+								@alertdialog.Media() {
+									@icon.TriangleAlert()
+								}
+								@alertdialog.Title() {
+									Delete your account?
+								}
+								@alertdialog.Description() {
+									You still own Northwind Labs. Transfer ownership or close it before deleting your account.
+								}
+							}
+							@alertdialog.Footer() {
+								@alertdialog.Cancel() {
+									Cancel
+								}
+								@alertdialog.Action(alertdialog.ActionProps{Variant: button.VariantOutline}) {
+									Go to organization settings
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	</div>
+}
+
+templ securityRow(ic func(...icon.Props) templ.Component, label, detail string, on bool) {
+	<div class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+		<span class="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full">
+			@ic(icon.Props{Class: "size-4"})
+		</span>
+		<div class="flex min-w-0 flex-1 flex-col">
+			<span class="text-sm font-medium">{ label }</span>
+			<span class="text-muted-foreground text-xs">{ detail }</span>
+		</div>
+		if on {
+			@pill("on", pillOK)
+		} else {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeXs}) {
+				Set up
+			}
+		}
+	</div>
+}
+
+templ notificationsSection(prefs []NotificationPref) {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Notifications
+			}
+			@card.Description() {
+				Choose how you hear about activity. These are your personal preferences and apply to the current organization.
+			}
+			@card.Action() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+					@icon.Slack(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+					Connected to #payments
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "px-0"}) {
+			@table.Table() {
+				@table.Header() {
+					@table.Row() {
+						@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+							Event
+						}
+						@table.Head(table.HeadProps{Class: "w-20 text-center"}) {
+							Email
+						}
+						@table.Head(table.HeadProps{Class: "w-20 text-center"}) {
+							Push
+						}
+						@table.Head(table.HeadProps{Class: "w-20 pr-(--card-spacing) text-center"}) {
+							Slack
+						}
+					}
+				}
+				@table.Body() {
+					{{ group := "" }}
+					for _, n := range prefs {
+						if n.Group != group {
+							{{ group = n.Group }}
+							@table.Row(table.RowProps{Class: "bg-muted/40 hover:bg-muted/40"}) {
+								@table.Cell(table.CellProps{Class: "text-muted-foreground pl-(--card-spacing) py-1.5 text-xs font-medium uppercase tracking-wide", Attributes: templ.Attributes{"colspan": "4"}}) {
+									{ n.Group }
+								}
+							}
+						}
+						@table.Row() {
+							@table.Cell(table.CellProps{Class: "pl-(--card-spacing)"}) {
+								<div class="flex flex-col">
+									<span class="font-medium">{ n.Label }</span>
+									<span class="text-muted-foreground text-xs">{ n.Desc }</span>
+								</div>
+							}
+							@table.Cell(table.CellProps{Class: "text-center"}) {
+								@toggle("n-email-"+n.Label, n.Email, n.Label+" by email")
+							}
+							@table.Cell(table.CellProps{Class: "text-center"}) {
+								@toggle("n-push-"+n.Label, n.Push, n.Label+" by push")
+							}
+							@table.Cell(table.CellProps{Class: "pr-(--card-spacing) text-center"}) {
+								@toggle("n-slack-"+n.Label, n.Slack, n.Label+" in Slack")
+							}
+						}
+					}
+				}
+			}
+		}
+		@card.Footer(card.FooterProps{Class: "justify-end gap-2 border-t"}) {
+			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm}) {
+				Discard
+			}
+			@button.Button(button.Props{Size: button.SizeSm}) {
+				Save changes
+			}
+		}
+	}
+}
+
+templ accountOrgs(orgs []Organization) {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Organizations
+			}
+			@card.Description() {
+				{ fmt.Sprintf("You belong to %d organizations. Switch from the sidebar or leave ones you no longer need.", len(orgs)) }
+			}
+			@card.Action() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+					@icon.Plus(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+					Create organization
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col divide-y"}) {
+			for _, o := range orgs {
+				<div class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+					<div class={ utils.CN("flex size-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold", utils.IfElse(o.Current, "bg-primary text-primary-foreground", "bg-muted text-muted-foreground")) }>
+						{ o.Initials }
+					</div>
+					<div class="flex min-w-0 flex-1 flex-col">
+						<span class="flex items-center gap-2 text-sm font-medium">
+							{ o.Name }
+							if o.Current {
+								<span class="bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 text-[10px]">Current</span>
+							}
+						</span>
+						<span class="text-muted-foreground text-xs">{ o.Plan } · you are { o.Role }</span>
+					</div>
+					if o.Current {
+						@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Href: "/dashboard/settings"}) {
+							Settings
+						}
+					} else {
+						@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+							Switch
+						}
+					}
+					@dropdownmenu.DropdownMenu() {
+						@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: dropdownmenu.Trigger(ctx)}) {
+							@icon.Ellipsis()
+							<span class="sr-only">Organization actions</span>
+						}
+						@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-48"}) {
+							@dropdownmenu.Item(dropdownmenu.ItemProps{Disabled: o.Role == "Owner"}) {
+								@icon.LogOut()
+								Leave organization
+							}
+						}
+					}
+				</div>
+			}
+		}
+	}
+}

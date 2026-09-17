@@ -1,0 +1,224 @@
+package dashboard
+
+import (
+	"fmt"
+	"templ-app/components/badge"
+	"templ-app/components/button"
+	"templ-app/components/card"
+	"templ-app/components/chart"
+	"templ-app/components/icon"
+	"templ-app/components/inputgroup"
+	selectcomp "templ-app/components/select"
+	"templ-app/utils"
+)
+
+// pageHead is the title row every dashboard page starts with. Children
+// render as the action buttons on the right.
+templ pageHead(title, description string, sandbox bool) {
+	<div class="flex flex-wrap items-end justify-between gap-4">
+		<div class="flex flex-col gap-1">
+			<div class="flex items-center gap-3">
+				<h2 class="text-2xl font-semibold tracking-tight">{ title }</h2>
+				if sandbox {
+					@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"}) {
+						@icon.FlaskConical()
+						Sandbox
+					}
+				}
+			</div>
+			<p class="text-muted-foreground text-sm">{ description }</p>
+		</div>
+		<div class="flex flex-wrap items-center gap-2">
+			{ children... }
+		</div>
+	</div>
+}
+
+// Stat is one compact tile in a page's stat strip.
+type Stat struct {
+	Label  string
+	Value  string
+	Change string
+	Trend  Trend
+	Hint   string
+}
+
+templ statStrip(stats []Stat) {
+	<div class={ utils.CN("grid gap-4 sm:grid-cols-2", utils.IfElse(len(stats) == 3, "xl:grid-cols-3", "xl:grid-cols-4")) }>
+		for _, s := range stats {
+			@statTile(s)
+		}
+	</div>
+}
+
+templ statTile(s Stat) {
+	@card.Card(card.Props{Size: card.SizeSm, Class: "gap-2"}) {
+		@card.Header() {
+			@card.Description() {
+				{ s.Label }
+			}
+			@card.Title(card.TitleProps{Class: "text-2xl font-semibold tracking-tight tabular-nums"}) {
+				{ s.Value }
+			}
+			if s.Change != "" {
+				@card.Action() {
+					@trendBadge(s.Change, s.Trend)
+				}
+			}
+		}
+		if s.Hint != "" {
+			@card.Footer(card.FooterProps{Class: "text-muted-foreground text-xs"}) {
+				{ s.Hint }
+			}
+		}
+	}
+}
+
+// tableFooter is the "Showing x of y" strip with pager buttons.
+templ tableFooter(shown, total int, noun string) {
+	@card.Footer(card.FooterProps{Class: "text-muted-foreground justify-between border-t text-xs"}) {
+		<span>{ fmt.Sprintf("Showing %d of %s %s", shown, chart.Thousands(float64(total), 0), noun) }</span>
+		<div class="flex gap-1">
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeXs, Disabled: true}) {
+				Previous
+			}
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeXs, Disabled: shown >= total}) {
+				Next
+			}
+		</div>
+	}
+}
+
+// searchBox is the toolbar search input.
+templ searchBox(placeholder, class string) {
+	@inputgroup.InputGroup(inputgroup.Props{Class: utils.CN("h-8 w-full sm:w-64", class)}) {
+		@inputgroup.Addon() {
+			@icon.Search(icon.Props{Class: "size-4"})
+		}
+		@inputgroup.Input(inputgroup.InputProps{Type: "search", Placeholder: placeholder, Attributes: templ.Attributes{"aria-label": placeholder}})
+	}
+}
+
+// option is one entry of a filter select.
+type option struct {
+	Value string
+	Label string
+}
+
+// filterSelect is a compact select for table toolbars.
+templ filterSelect(name string, options []option, def, class string) {
+	@selectcomp.Select(selectcomp.Props{Name: name, DefaultValue: def}) {
+		@selectcomp.Trigger(selectcomp.TriggerProps{Size: selectcomp.SizeSm, Class: utils.CN("w-full sm:w-40", class), Attributes: templ.Attributes{"aria-label": name}}) {
+			@selectcomp.Value(selectcomp.ValueProps{Placeholder: name})
+		}
+		@selectcomp.Content() {
+			for _, o := range options {
+				@selectcomp.Item(selectcomp.ItemProps{Value: o.Value}) {
+					{ o.Label }
+				}
+			}
+		}
+	}
+}
+
+// fieldSelect is a full-width select for forms.
+templ fieldSelect(id string, options []option, def string) {
+	@selectcomp.Select(selectcomp.Props{Name: id, DefaultValue: def}) {
+		@selectcomp.Trigger(selectcomp.TriggerProps{ID: id, Class: "w-full"}) {
+			@selectcomp.Value()
+		}
+		@selectcomp.Content() {
+			for _, o := range options {
+				@selectcomp.Item(selectcomp.ItemProps{Value: o.Value}) {
+					{ o.Label }
+				}
+			}
+		}
+	}
+}
+
+// toggle is a CSS-only switch bound to a hidden checkbox.
+templ toggle(name string, on bool, label string) {
+	<label class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center">
+		<input type="checkbox" name={ name } class="peer sr-only" checked?={ on } aria-label={ label }/>
+		<span class="bg-input dark:bg-input/80 peer-checked:bg-primary peer-focus-visible:ring-ring/50 absolute inset-0 rounded-full border border-transparent transition-colors peer-focus-visible:ring-3"></span>
+		<span class="bg-white dark:bg-foreground absolute left-0.5 size-4 rounded-full shadow-sm transition-transform peer-checked:translate-x-4"></span>
+	</label>
+}
+
+// checkbox is a native checkbox with a label.
+templ checkbox(name, label string, on bool) {
+	<label class="flex items-center gap-2 text-sm">
+		<input type="checkbox" name={ name } checked?={ on } class="accent-primary size-4 rounded"/>
+		{ label }
+	</label>
+}
+
+// monoValue renders an identifier or URL with a copy button.
+templ monoValue(value string, class string) {
+	<span class={ utils.CN("group/mono inline-flex min-w-0 items-center gap-1 font-mono text-xs", class) }>
+		<span class="truncate">{ value }</span>
+		@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Class: "text-muted-foreground opacity-0 transition-opacity group-hover/mono:opacity-100 focus-visible:opacity-100", Attributes: templ.Attributes{"aria-label": "Copy"}}) {
+			@icon.Copy(icon.Props{Class: "size-3"})
+		}
+	</span>
+}
+
+// pill is a generic coloured status badge.
+templ pill(label, class string) {
+	@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: utils.CN("capitalize", class)}) {
+		<span class="size-1.5 rounded-full bg-current" aria-hidden="true"></span>
+		{ label }
+	}
+}
+
+const (
+	pillOK      = "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+	pillWarn    = "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+	pillBad     = "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400"
+	pillInfo    = "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+	pillNeutral = "text-muted-foreground"
+)
+
+// tid prefixes identifiers with _test in sandbox mode.
+func tid(sandbox bool, id string) string {
+	if !sandbox {
+		return id
+	}
+	for _, pre := range []string{"pay_", "plink_", "po_", "cus_", "we_", "evt_", "tx_"} {
+		if len(id) > len(pre) && id[:len(pre)] == pre {
+			return pre + "test_" + id[len(pre):]
+		}
+	}
+	return id
+}
+
+// assetColor maps a symbol to its icon background.
+func assetColor(symbol string) string {
+	switch symbol {
+	case "USDT":
+		return "bg-emerald-500"
+	case "USDC":
+		return "bg-sky-500"
+	case "BTC":
+		return "bg-orange-500"
+	case "ETH":
+		return "bg-indigo-500"
+	case "SOL":
+		return "bg-violet-500"
+	case "TRX":
+		return "bg-red-500"
+	}
+	return "bg-zinc-500"
+}
+
+// tokenStack renders overlapping token icons for a list of symbols.
+templ tokenStack(symbols []string) {
+	<span class="flex -space-x-1.5">
+		for _, s := range symbols {
+			<span class={ utils.CN("ring-card flex size-6 items-center justify-center rounded-full text-[8px] font-bold text-white ring-2", assetColor(s)) } title={ s }>
+				{ s[:1] }
+			</span>
+		}
+	</span>
+}

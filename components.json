@@ -1,0 +1,17 @@
+{
+  "$schema": "https://shadcn-templ.com/schema/components.json",
+  "style": "base-luma",
+  "tailwind": {
+    "css": "assets/css/globals.css",
+    "baseColor": "mist",
+    "cssVariables": true
+  },
+  "rtl": false,
+  "iconLibrary": "remixicon",
+  "menuColor": "inverted-translucent",
+  "menuAccent": "subtle",
+  "aliases": {
+    "components": "templ-app/components",
+    "utils": "templ-app/utils"
+  }
+}

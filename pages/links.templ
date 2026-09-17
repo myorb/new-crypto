@@ -1,0 +1,15 @@
+package pages
+
+import (
+	"templ-app/blocks/dashboard"
+	"templ-app/layouts"
+)
+
+// Links is the Payment links page with sample data. sandbox switches to the
+// simulated test dataset. Replace dashboard.LinksFixture() with real rows in
+// a handler.
+templ Links(sandbox bool) {
+	@layouts.Dashboard(shell("Payment links", "/dashboard/links", sandbox)) {
+		@dashboard.Links(dashboard.LinksFixture(sandbox))
+	}
+}

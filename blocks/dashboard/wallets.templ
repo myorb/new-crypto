@@ -1,0 +1,329 @@
+package dashboard
+
+import (
+	"fmt"
+	"templ-app/components/button"
+	"templ-app/components/card"
+	"templ-app/components/chart"
+	"templ-app/components/dialog"
+	"templ-app/components/dropdownmenu"
+	"templ-app/components/field"
+	"templ-app/components/icon"
+	"templ-app/components/input"
+	"templ-app/components/table"
+	"templ-app/utils"
+)
+
+// Wallets is the wallets page: total balance, one card per asset, deposit
+// addresses and on-chain activity.
+templ Wallets(d WalletsData) {
+	<div class="grid gap-6">
+		@pageHead("Wallets", "Crypto held across your custodial wallets, by asset and network", d.Sandbox) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.ArrowDownLeft(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Receive
+			}
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.Repeat(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Swap
+			}
+			@sendDialog(d)
+		}
+		<div class="grid gap-4 lg:grid-cols-3">
+			@totalBalanceCard(d)
+			<div class="grid gap-4 sm:grid-cols-2 lg:col-span-2 xl:grid-cols-3">
+				for _, w := range d.Wallets {
+					@walletCard(w)
+				}
+			</div>
+		</div>
+		<div class="grid gap-4 xl:grid-cols-5">
+			<div class="xl:col-span-2">
+				@addressesCard(d.Addresses)
+			</div>
+			<div class="xl:col-span-3">
+				@activityCard(d.Activity, d.ActivityAll)
+			</div>
+		</div>
+	</div>
+}
+
+templ totalBalanceCard(d WalletsData) {
+	{{ total := d.TotalValue() }}
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Description() {
+				Total balance
+			}
+			@card.Title(card.TitleProps{Class: "flex items-center gap-3 text-3xl font-semibold tracking-tight tabular-nums"}) {
+				{ d.Total }
+				@trendBadge(d.Change, d.Trend)
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col gap-6"}) {
+			@chart.Donut(chart.DonutProps{Slices: walletSlices(d.Wallets), Class: "mx-auto w-40", Thickness: 11}) {
+				<span class="text-muted-foreground text-xs">Assets</span>
+				<span class="text-2xl font-semibold tracking-tight tabular-nums">{ fmt.Sprint(len(d.Wallets)) }</span>
+				<span class="text-muted-foreground text-xs">across 5 networks</span>
+			}
+			<ul class="flex flex-col divide-y">
+				for _, w := range d.Wallets {
+					<li class="flex items-center gap-3 py-2 text-sm">
+						@chart.Swatch(w.Chart)
+						<span class="font-medium">{ w.Symbol }</span>
+						<span class="text-muted-foreground truncate">{ w.Name }</span>
+						<span class="ml-auto tabular-nums">{ w.Fiat }</span>
+						<span class="text-muted-foreground w-12 text-right tabular-nums">{ chart.Share(w.Value, total) }</span>
+					</li>
+				}
+			</ul>
+		}
+		@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-2 text-xs"}) {
+			@icon.ShieldCheck(icon.Props{Class: "size-3.5"})
+			Custodied with MPC key shares · insured up to $5M
+		}
+	}
+}
+
+func walletSlices(ws []Wallet) []chart.Slice {
+	out := make([]chart.Slice, len(ws))
+	for i, w := range ws {
+		out[i] = chart.Slice{Label: w.Symbol, Value: w.Value, Color: w.Chart}
+	}
+	return out
+}
+
+templ walletCard(w Wallet) {
+	@card.Card(card.Props{Size: card.SizeSm, Class: "gap-3"}) {
+		@card.Header() {
+			@card.Title(card.TitleProps{Class: "flex items-center gap-2"}) {
+				@tokenIcon(w.Symbol, w.Color, "size-7 text-[9px]")
+				<span class="flex flex-col leading-tight">
+					<span class="text-sm font-medium">{ w.Name }</span>
+					<span class="text-muted-foreground text-xs font-normal">{ w.Network }</span>
+				</span>
+			}
+			@card.Action() {
+				@dropdownmenu.DropdownMenu() {
+					@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: dropdownmenu.Trigger(ctx)}) {
+						@icon.Ellipsis()
+						<span class="sr-only">Wallet actions</span>
+					}
+					@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-44"}) {
+						@dropdownmenu.Item() {
+							@icon.ArrowUpRight()
+							Send
+						}
+						@dropdownmenu.Item() {
+							@icon.ArrowDownLeft()
+							Receive
+						}
+						@dropdownmenu.Item() {
+							@icon.Repeat()
+							Swap
+						}
+						@dropdownmenu.Separator()
+						@dropdownmenu.Item() {
+							@icon.ExternalLink()
+							View on explorer
+						}
+					}
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col gap-1"}) {
+			<span class="text-2xl font-semibold tracking-tight tabular-nums">{ w.Fiat }</span>
+			<span class="text-muted-foreground flex items-center justify-between text-xs tabular-nums">
+				{ w.Amount }
+				<span class={ trendClass(w.Trend) }>{ w.Change } 24h</span>
+			</span>
+			@chart.Sparkline(chart.SparklineProps{Values: w.Spark, Class: "mt-2 h-10", Color: utils.IfElse(w.Trend == TrendDown, "var(--chart-4)", "var(--chart-1)")})
+		}
+		@card.Footer(card.FooterProps{Class: "justify-between"}) {
+			@monoValue(w.Address, "text-muted-foreground")
+			<span class="text-muted-foreground shrink-0 text-xs whitespace-nowrap">Auto-convert { utils.IfElse(w.Symbol == "USDT" || w.Symbol == "USDC", "off", "on") }</span>
+		}
+	}
+}
+
+templ addressesCard(addrs []DepositAddress) {
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Title() {
+				Deposit addresses
+			}
+			@card.Description() {
+				Share these to receive funds directly. Each network has its own address.
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col divide-y"}) {
+			for _, a := range addrs {
+				<div class="flex flex-col gap-1.5 py-3 first:pt-0 last:pb-0">
+					<div class="flex items-center gap-2 text-sm">
+						<span class="font-medium">{ a.Network }</span>
+						@tokenStack(a.Assets)
+						<span class="text-muted-foreground ml-auto text-xs">{ a.Label }</span>
+						@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Attributes: templ.Attributes{"aria-label": "Show QR code"}}) {
+							@icon.QrCode()
+						}
+					</div>
+					<div class="bg-muted/50 flex items-center gap-2 rounded-xl px-3 py-2">
+						<span class="truncate font-mono text-xs">{ a.Address }</span>
+						@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Class: "ml-auto shrink-0", Attributes: templ.Attributes{"aria-label": "Copy address"}}) {
+							@icon.Copy()
+						}
+					</div>
+				</div>
+			}
+		}
+		@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-2 text-xs"}) {
+			@icon.TriangleAlert(icon.Props{Class: "size-3.5 text-amber-500"})
+			Only send assets on their matching network. Wrong-network deposits cannot be recovered.
+		}
+	}
+}
+
+templ activityCard(acts []Activity, total int) {
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Title() {
+				On-chain activity
+			}
+			@card.Description() {
+				Deposits, withdrawals and swaps across all wallets
+			}
+			@card.Action() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+					@icon.Download(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+					Export
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "px-0"}) {
+			@table.Table() {
+				@table.Header() {
+					@table.Row() {
+						@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+							Transaction
+						}
+						@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+							Counterparty
+						}
+						@table.Head(table.HeadProps{Class: "text-right"}) {
+							Amount
+						}
+						@table.Head(table.HeadProps{Class: "hidden lg:table-cell"}) {
+							Confirmations
+						}
+						@table.Head(table.HeadProps{Class: "pr-(--card-spacing) text-right"}) {
+							Time
+						}
+					}
+				}
+				@table.Body() {
+					for _, a := range acts {
+						@table.Row() {
+							@table.Cell(table.CellProps{Class: "pl-(--card-spacing)"}) {
+								<div class="flex items-center gap-3">
+									<span class={ utils.CN("flex size-8 shrink-0 items-center justify-center rounded-full", activityIcon(a.Kind)) }>
+										switch a.Kind {
+											case ActivityIn:
+												@icon.ArrowDownLeft(icon.Props{Class: "size-4"})
+											case ActivityOut:
+												@icon.ArrowUpRight(icon.Props{Class: "size-4"})
+											default:
+												@icon.Repeat(icon.Props{Class: "size-4"})
+										}
+									</span>
+									<div class="flex min-w-0 flex-col">
+										<span class="text-sm font-medium capitalize">{ string(a.Kind) } · { a.Asset } <span class="text-muted-foreground font-normal">on { a.Network }</span></span>
+										@monoValue(a.Hash, "text-muted-foreground")
+									</div>
+								</div>
+							}
+							@table.Cell(table.CellProps{Class: "text-muted-foreground hidden font-mono text-xs md:table-cell"}) {
+								{ a.Counterparty }
+							}
+							@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+								<div class="flex flex-col">
+									<span class={ utils.CN("font-medium", utils.IfElse(a.Kind == ActivityIn, "text-emerald-600 dark:text-emerald-400", "")) }>{ a.Amount }</span>
+									<span class="text-muted-foreground text-xs">{ a.Fiat }</span>
+								</div>
+							}
+							@table.Cell(table.CellProps{Class: "hidden lg:table-cell"}) {
+								@confirmations(a.Confirmations, a.Status)
+							}
+							@table.Cell(table.CellProps{Class: "text-muted-foreground pr-(--card-spacing) text-right text-xs whitespace-nowrap"}) {
+								{ a.Time }
+							}
+						}
+					}
+				}
+			}
+		}
+		@tableFooter(len(acts), total, "transactions")
+	}
+}
+
+// sendDialog is the "Send" form.
+templ sendDialog(d WalletsData) {
+	{{
+		opts := make([]option, len(d.Wallets))
+		for i, w := range d.Wallets {
+			opts[i] = option{Value: w.Symbol, Label: w.Symbol + " · " + w.Amount}
+		}
+	}}
+	@dialog.Dialog() {
+		@button.Button(button.Props{Size: button.SizeSm, Attributes: dialog.Trigger(ctx)}) {
+			@icon.ArrowUpRight(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+			Send
+		}
+		@dialog.Content() {
+			@dialog.Header() {
+				@dialog.Title() {
+					Send crypto
+				}
+				@dialog.Description() {
+					Withdrawals over $10,000 require a second approver.
+				}
+			}
+			<form class="grid gap-4" onsubmit="return false">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "send-asset"}) {
+						Asset
+					}
+					@fieldSelect("send-asset", opts, opts[0].Value)
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "send-network"}) {
+						Network
+					}
+					@fieldSelect("send-network", networkOptions[1:], "tron")
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "send-to"}) {
+						Recipient address
+					}
+					@input.Input(input.Props{ID: "send-to", Placeholder: "Paste an address or pick a saved destination", Class: "font-mono"})
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "send-amount"}) {
+						Amount
+					}
+					@input.Input(input.Props{ID: "send-amount", Type: "number", Placeholder: "0.00", Attributes: templ.Attributes{"step": "any", "min": "0"}})
+					@field.Description() {
+						Network fee is estimated at confirmation.
+					}
+				}
+			</form>
+			@dialog.Footer() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Attributes: dialog.Close(ctx)}) {
+					Cancel
+				}
+				@button.Button() {
+					Review transfer
+				}
+			}
+		}
+	}
+}

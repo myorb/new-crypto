@@ -1,0 +1,15 @@
+package pages
+
+import (
+	"templ-app/blocks/dashboard"
+	"templ-app/layouts"
+)
+
+// Payouts is the Payouts page with sample data. sandbox switches to the
+// simulated test dataset. Replace dashboard.PayoutsFixture() with real rows in
+// a handler.
+templ Payouts(sandbox bool) {
+	@layouts.Dashboard(shell("Payouts", "/dashboard/payouts", sandbox)) {
+		@dashboard.Payouts(dashboard.PayoutsFixture(sandbox))
+	}
+}

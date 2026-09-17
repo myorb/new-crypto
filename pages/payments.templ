@@ -1,0 +1,15 @@
+package pages
+
+import (
+	"templ-app/blocks/dashboard"
+	"templ-app/layouts"
+)
+
+// Payments is the Payments page with sample data. sandbox switches to the
+// simulated test dataset. Replace dashboard.PaymentsFixture() with real rows in
+// a handler.
+templ Payments(sandbox bool) {
+	@layouts.Dashboard(shell("Payments", "/dashboard/payments", sandbox)) {
+		@dashboard.Payments(dashboard.PaymentsFixture(sandbox))
+	}
+}

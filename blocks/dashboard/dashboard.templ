@@ -1,0 +1,656 @@
+package dashboard
+
+import (
+	"fmt"
+	"templ-app/components/badge"
+	"templ-app/components/button"
+	"templ-app/components/card"
+	"templ-app/components/chart"
+	"templ-app/components/icon"
+	"templ-app/components/progress"
+	"templ-app/components/table"
+	"templ-app/components/tabs"
+	"templ-app/utils"
+)
+
+// Overview is the merchant overview page content. Wrap it in
+// layouts.Dashboard for the sidebar shell.
+templ Overview(d Data) {
+	<div class="grid gap-6">
+		@PageHeader(d)
+		if d.Sandbox {
+			@DeveloperCard(d.Developer)
+		}
+		<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+			for _, k := range d.KPIs {
+				@KPICard(k)
+			}
+		</div>
+		<div class="grid gap-4 lg:grid-cols-3">
+			<div class="lg:col-span-2">
+				@VolumeCard(d.Ranges)
+			</div>
+			@AssetsCard(d)
+		</div>
+		<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+			@SettlementCard(d.Settlement)
+			@StatusCard(d.StatusByDay)
+			@NetworksCard(d.Networks)
+			@BalancesCard(d.Balances)
+		</div>
+		@PaymentsCard(d.Payments, d.TotalCount)
+	</div>
+}
+
+templ PageHeader(d Data) {
+	<div class="flex flex-wrap items-end justify-between gap-4">
+		<div class="flex flex-col gap-1">
+			<div class="flex items-center gap-3">
+				<h2 class="text-2xl font-semibold tracking-tight">Payments overview</h2>
+				if d.Sandbox {
+					@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"}) {
+						@icon.FlaskConical()
+						Sandbox · simulated data
+					}
+				} else {
+					@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: "gap-1.5 text-emerald-600 dark:text-emerald-400"}) {
+						<span class="relative flex size-1.5">
+							<span class="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-60"></span>
+							<span class="relative inline-flex size-1.5 rounded-full bg-emerald-500"></span>
+						</span>
+						All systems operational
+					}
+				}
+			</div>
+			<p class="text-muted-foreground text-sm">
+				{ d.MerchantName } · { d.Today } · { d.Period }
+				if d.Sandbox {
+					· Test data resets nightly
+				}
+			</p>
+		</div>
+		<div class="flex flex-wrap items-center gap-2">
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.Calendar(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				{ d.Period }
+				@icon.ChevronDown(icon.Props{Class: "text-muted-foreground", Attributes: templ.Attributes{"data-icon": "inline-end"}})
+			}
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.Download(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Export
+			}
+			if d.Sandbox {
+				@button.Button(button.Props{Size: button.SizeSm, Class: "bg-amber-500 text-amber-950 hover:bg-amber-400"}) {
+					@icon.Play(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+					Simulate payment
+				}
+			} else {
+				@button.Button(button.Props{Size: button.SizeSm}) {
+					@icon.Plus(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+					Create payment link
+				}
+			}
+		</div>
+	</div>
+}
+
+// DeveloperCard is the sandbox-only tooling strip: test keys, webhook
+// health, recent deliveries and one-click simulated events.
+templ DeveloperCard(dev Developer) {
+	@card.Card(card.Props{Class: "ring-amber-500/30 dark:ring-amber-500/25"}) {
+		@card.Header() {
+			@card.Title(card.TitleProps{Class: "flex items-center gap-2"}) {
+				@icon.SquareTerminal(icon.Props{Class: "size-4 text-amber-600 dark:text-amber-400"})
+				Developer tools
+			}
+			@card.Description() {
+				Test credentials, webhook deliveries and simulated events for this sandbox
+			}
+			@card.Action(card.ActionProps{Class: "flex gap-2"}) {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Class: "hidden sm:inline-flex"}) {
+					@icon.BookOpen(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+					API docs
+				}
+				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Class: "hidden sm:inline-flex"}) {
+					@icon.RotateCcw(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+					Reset sandbox
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "grid gap-6 *:min-w-0 lg:grid-cols-3"}) {
+			<div class="flex flex-col gap-3">
+				@devLabel("API keys", "v"+dev.APIVersion)
+				@keyRow("Publishable", dev.PublishableKey, false)
+				@keyRow("Secret", dev.SecretKey, true)
+				<p class="text-muted-foreground text-xs">Test keys only work against sandbox endpoints and never move funds.</p>
+			</div>
+			<div class="flex flex-col gap-3">
+				@devLabel("Webhook endpoint", "")
+				<div class="bg-muted/50 flex items-center gap-2 rounded-xl px-3 py-2">
+					@icon.Webhook(icon.Props{Class: "text-muted-foreground size-4 shrink-0"})
+					<span class="truncate font-mono text-xs">{ dev.WebhookURL }</span>
+					@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: "ml-auto border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}) {
+						Healthy
+					}
+				</div>
+				<div class="flex flex-col gap-1.5">
+					<div class="text-muted-foreground flex justify-between text-xs tabular-nums">
+						<span>Deliveries · last 24h</span>
+						<span>{ fmt.Sprintf("%d delivered · %d failed", dev.Delivered, dev.Failed) }</span>
+					</div>
+					<div class="bg-muted flex h-2 overflow-hidden rounded-full">
+						<div class="h-full bg-emerald-500" style={ templ.SafeCSS(fmt.Sprintf("width:%.1f%%", deliveryRate(dev))) }></div>
+						<div class="bg-destructive h-full flex-1"></div>
+					</div>
+				</div>
+				<div class="flex gap-2">
+					@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeXs}) {
+						Send test event
+					}
+					@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeXs}) {
+						View logs
+					}
+				</div>
+			</div>
+			<div class="flex flex-col gap-3">
+				@devLabel("Recent events", "")
+				<ul class="flex flex-col divide-y text-xs">
+					for _, e := range dev.Events {
+						<li class="flex items-center gap-2 py-1.5">
+							if e.OK {
+								@icon.CircleCheck(icon.Props{Class: "size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"})
+							} else {
+								@icon.CircleX(icon.Props{Class: "size-3.5 shrink-0 text-rose-600 dark:text-rose-400"})
+							}
+							<span class="font-mono">{ e.Type }</span>
+							<span class="text-muted-foreground truncate font-mono">{ e.ID }</span>
+							<span class="text-muted-foreground ml-auto whitespace-nowrap">{ e.Time }</span>
+						</li>
+					}
+				</ul>
+			</div>
+		}
+		@card.Footer(card.FooterProps{Class: "flex-wrap gap-2 border-t"}) {
+			<span class="text-muted-foreground mr-2 text-xs">Simulate</span>
+			for _, s := range simulations {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeXs, Class: "gap-1.5"}) {
+					<span class={ utils.CN("size-1.5 rounded-full", s.Dot) } aria-hidden="true"></span>
+					{ s.Label }
+				}
+			}
+			<span class="text-muted-foreground ml-auto text-xs">Events appear in the feed within seconds</span>
+		}
+	}
+}
+
+type simulation struct {
+	Label string
+	Dot   string
+}
+
+var simulations = []simulation{
+	{Label: "Successful payment", Dot: "bg-emerald-500"},
+	{Label: "Pending payment", Dot: "bg-amber-500"},
+	{Label: "Failed payment", Dot: "bg-rose-500"},
+	{Label: "Refund", Dot: "bg-muted-foreground"},
+	{Label: "Payout", Dot: "bg-sky-500"},
+}
+
+func deliveryRate(dev Developer) float64 {
+	total := dev.Delivered + dev.Failed
+	if total == 0 {
+		return 100
+	}
+	return float64(dev.Delivered) / float64(total) * 100
+}
+
+templ devLabel(label, hint string) {
+	<div class="flex items-center justify-between">
+		<span class="text-sm font-medium">{ label }</span>
+		if hint != "" {
+			<span class="text-muted-foreground font-mono text-xs">{ hint }</span>
+		}
+	</div>
+}
+
+templ keyRow(label, value string, secret bool) {
+	<div class="bg-muted/50 flex items-center gap-2 rounded-xl px-3 py-2">
+		<span class="text-muted-foreground w-24 shrink-0 text-xs">{ label }</span>
+		<span class="truncate font-mono text-xs">{ value }</span>
+		<span class="ml-auto flex shrink-0 gap-0.5">
+			if secret {
+				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Attributes: templ.Attributes{"aria-label": "Reveal key"}}) {
+					@icon.Eye()
+				}
+			}
+			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Attributes: templ.Attributes{"aria-label": "Copy key"}}) {
+				@icon.Copy()
+			}
+		</span>
+	</div>
+}
+
+templ KPICard(k KPI) {
+	@card.Card(card.Props{Size: card.SizeSm, Class: "gap-3"}) {
+		@card.Header() {
+			@card.Description() {
+				{ k.Label }
+			}
+			@card.Title(card.TitleProps{Class: "text-2xl font-semibold tracking-tight tabular-nums"}) {
+				{ k.Value }
+			}
+			@card.Action() {
+				@trendBadge(k.Change, k.Trend)
+			}
+		}
+		@card.Content(card.ContentProps{Class: "px-0"}) {
+			@chart.Sparkline(chart.SparklineProps{Values: k.Spark, Class: "h-12", Color: utils.IfElse(k.Trend == TrendDown, "var(--chart-4)", "var(--chart-1)")})
+		}
+		@card.Footer(card.FooterProps{Class: "text-muted-foreground text-xs"}) {
+			{ k.Hint }
+		}
+	}
+}
+
+templ trendBadge(change string, t Trend) {
+	@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: utils.CN("tabular-nums", trendClass(t))}) {
+		switch t {
+			case TrendUp:
+				@icon.TrendingUp()
+			case TrendDown:
+				@icon.TrendingDown()
+			default:
+				@icon.Minus()
+		}
+		{ change }
+	}
+}
+
+templ VolumeCard(ranges []Range) {
+	@card.Card(card.Props{Class: "h-full"}) {
+		@tabs.Tabs(tabs.Props{DefaultValue: "30d", Class: "gap-(--card-spacing)"}) {
+			@card.Header() {
+				@card.Title() {
+					Payment volume
+				}
+				@card.Description() {
+					Gross volume received, settled in USD
+				}
+				@card.Action() {
+					@tabs.List() {
+						for _, r := range ranges {
+							@tabs.Trigger(tabs.TriggerProps{Value: r.Key}) {
+								{ r.Key }
+							}
+						}
+					}
+				}
+			}
+			for _, r := range ranges {
+				@tabs.Content(tabs.ContentProps{Value: r.Key}) {
+					@card.Content(card.ContentProps{Class: "flex flex-col gap-6"}) {
+						<div class="flex flex-wrap items-end justify-between gap-4">
+							<div class="flex flex-col gap-1">
+								<span class="text-muted-foreground text-xs">Total · last { r.Label }</span>
+								<span class="flex items-center gap-3">
+									<span class="text-3xl font-semibold tracking-tight tabular-nums">{ r.Total }</span>
+									@trendBadge(r.Change, r.Trend)
+								</span>
+							</div>
+							<div class="text-muted-foreground flex items-center gap-4 text-xs">
+								for _, s := range r.Series {
+									<span class="flex items-center gap-1.5">
+										if s.Dashed {
+											<span class="w-3 border-t border-dashed" style={ templ.SafeCSS("border-color:" + s.Color) }></span>
+										} else {
+											@chart.Swatch(s.Color)
+										}
+										{ s.Name }
+									</span>
+								}
+							</div>
+						</div>
+						@chart.Area(chart.AreaProps{Series: r.Series, Height: "h-64", Format: money0})
+					}
+				}
+			}
+		}
+	}
+}
+
+func money0(v float64) string {
+	return "$" + chart.Compact(v)
+}
+
+templ AssetsCard(d Data) {
+	{{ total := d.TotalAssetVolume() }}
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Title() {
+				Volume by asset
+			}
+			@card.Description() {
+				Share of gross volume, { d.Period }
+			}
+			@card.Action() {
+				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: templ.Attributes{"aria-label": "More"}}) {
+					@icon.Ellipsis()
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col gap-6"}) {
+			@chart.Donut(chart.DonutProps{Slices: assetSlices(d.Assets), Class: "mx-auto w-44", Thickness: 11}) {
+				<span class="text-muted-foreground text-xs">Total volume</span>
+				<span class="text-2xl font-semibold tracking-tight tabular-nums">{ money0(total) }</span>
+				<span class="text-muted-foreground text-xs">{ fmt.Sprintf("%d assets", len(d.Assets)) }</span>
+			}
+			<ul class="flex flex-col divide-y">
+				for _, a := range d.Assets {
+					<li class="flex items-center gap-3 py-2 text-sm">
+						@chart.Swatch(a.Color)
+						<span class="font-medium">{ a.Symbol }</span>
+						<span class="text-muted-foreground truncate">{ a.Name }</span>
+						<span class="ml-auto tabular-nums">{ a.Fiat }</span>
+						<span class="text-muted-foreground w-12 text-right tabular-nums">{ chart.Share(a.Volume, total) }</span>
+					</li>
+				}
+			</ul>
+		}
+	}
+}
+
+func assetSlices(assets []AssetShare) []chart.Slice {
+	out := make([]chart.Slice, len(assets))
+	for i, a := range assets {
+		out[i] = chart.Slice{Label: a.Symbol, Value: a.Volume, Color: a.Color}
+	}
+	return out
+}
+
+templ SettlementCard(s Settlement) {
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Title() {
+				Settlement & payouts
+			}
+			@card.Description() {
+				Fiat balance ready to withdraw
+			}
+			@card.Action() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+					Pay out
+					@icon.ArrowUpRight(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-end"}})
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col gap-5"}) {
+			<div class="flex flex-col gap-1">
+				<span class="text-muted-foreground text-xs">Available</span>
+				<span class="text-3xl font-semibold tracking-tight tabular-nums">{ s.Available }</span>
+			</div>
+			<dl class="grid grid-cols-2 gap-3 text-sm">
+				@statRow("Pending", s.Pending, s.PendingHint)
+				@statRow("In transit", s.InTransit, s.NextPayoutDate)
+				@statRow("Fees (30d)", s.Fees, s.FeesHint)
+				@statRow("Next payout", s.NextPayoutDate, s.NextPayoutTo)
+			</dl>
+			@progress.Progress(progress.Props{Value: s.ThresholdValue, Class: "gap-2"}) {
+				@progress.Label(progress.LabelProps{Class: "text-muted-foreground text-xs font-normal"}) {
+					{ s.ThresholdLabel }
+				}
+				@progress.Value(progress.ValueProps{Class: "text-xs"})
+			}
+		}
+		@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-2 text-xs"}) {
+			@icon.RefreshCw(icon.Props{Class: "size-3.5"})
+			{ s.AutoConvertNote }
+		}
+	}
+}
+
+templ statRow(label, value, hint string) {
+	<div class="bg-muted/50 flex flex-col gap-0.5 rounded-xl p-3">
+		<dt class="text-muted-foreground text-xs">{ label }</dt>
+		<dd class="font-medium tabular-nums">{ value }</dd>
+		<dd class="text-muted-foreground truncate text-xs">{ hint }</dd>
+	</div>
+}
+
+var statusLegend = []chart.Legend{
+	{Name: "Succeeded", Color: "var(--chart-1)"},
+	{Name: "Pending", Color: "var(--chart-4)"},
+	{Name: "Failed", Color: "var(--destructive)"},
+}
+
+templ StatusCard(groups []chart.Group) {
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Title() {
+				Payments by status
+			}
+			@card.Description() {
+				Daily count, last 14 days
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-1 flex-col justify-end gap-4"}) {
+			@chart.Bars(chart.BarsProps{Groups: groups, Series: statusLegend, Height: "h-44", XLabels: 4})
+		}
+		@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-4 text-xs"}) {
+			for _, l := range statusLegend {
+				<span class="flex items-center gap-1.5">
+					@chart.Swatch(l.Color)
+					{ l.Name }
+				</span>
+			}
+		}
+	}
+}
+
+templ NetworksCard(networks []NetworkShare) {
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Title() {
+				Payments by network
+			}
+			@card.Description() {
+				Where your customers pay from
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col gap-4"}) {
+			for _, n := range networks {
+				<div class="flex flex-col gap-1.5 text-sm">
+					<div class="flex items-center gap-2">
+						<span class="font-medium">{ n.Name }</span>
+						<span class="text-muted-foreground ml-auto tabular-nums">{ chart.Thousands(float64(n.Payments), 0) }</span>
+						<span class="w-10 text-right tabular-nums">{ fmt.Sprintf("%.0f%%", n.Share) }</span>
+					</div>
+					<div class="bg-muted h-2 overflow-hidden rounded-full">
+						<div class="h-full rounded-full" style={ templ.SafeCSS(fmt.Sprintf("width:%.1f%%;background:%s", n.Share, n.Color)) }></div>
+					</div>
+				</div>
+			}
+		}
+		@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-2 text-xs"}) {
+			@icon.Globe(icon.Props{Class: "size-3.5"})
+			Customers in 42 countries
+		}
+	}
+}
+
+templ PaymentsCard(payments []Payment, total int) {
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Title() {
+				Recent payments
+			}
+			@card.Description() {
+				Live feed of incoming payments across all wallets
+			}
+			@card.Action(card.ActionProps{Class: "flex gap-2"}) {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Class: "hidden sm:inline-flex"}) {
+					@icon.ListFilter(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+					Filter
+				}
+				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Href: "/dashboard/payments"}) {
+					View all
+					@icon.ChevronRight(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-end"}})
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "px-0"}) {
+			@table.Table() {
+				@table.Header() {
+					@table.Row() {
+						@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+							Payment
+						}
+						@table.Head() {
+							Customer
+						}
+						@table.Head() {
+							Method
+						}
+						@table.Head(table.HeadProps{Class: "text-right"}) {
+							Amount
+						}
+						@table.Head() {
+							Status
+						}
+						@table.Head(table.HeadProps{Class: "text-muted-foreground pr-(--card-spacing) text-right"}) {
+							Time
+						}
+					}
+				}
+				@table.Body() {
+					for _, p := range payments {
+						@table.Row() {
+							@table.Cell(table.CellProps{Class: "pl-(--card-spacing) font-mono text-xs"}) {
+								{ p.ID }
+							}
+							@table.Cell() {
+								<div class="flex flex-col">
+									<span class="font-medium">{ p.Customer }</span>
+									<span class="text-muted-foreground text-xs">{ p.Email }</span>
+								</div>
+							}
+							@table.Cell() {
+								<div class="flex items-center gap-2">
+									@tokenIcon(p.Asset, p.Color, "size-6 text-[9px]")
+									<div class="flex flex-col">
+										<span class="font-medium">{ p.Asset }</span>
+										<span class="text-muted-foreground text-xs">{ p.Network }</span>
+									</div>
+								</div>
+							}
+							@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+								<div class="flex flex-col">
+									<span class="font-medium">{ p.Fiat }</span>
+									<span class="text-muted-foreground text-xs">{ p.Amount }</span>
+								</div>
+							}
+							@table.Cell() {
+								@statusBadge(p.Status)
+							}
+							@table.Cell(table.CellProps{Class: "text-muted-foreground pr-(--card-spacing) text-right text-xs whitespace-nowrap"}) {
+								{ p.Time }
+							}
+						}
+					}
+				}
+			}
+		}
+		@card.Footer(card.FooterProps{Class: "text-muted-foreground justify-between border-t text-xs"}) {
+			<span>{ fmt.Sprintf("Showing %d of %s payments", len(payments), chart.Thousands(float64(total), 0)) }</span>
+			<div class="flex gap-1">
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeXs, Disabled: true}) {
+					Previous
+				}
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeXs}) {
+					Next
+				}
+			</div>
+		}
+	}
+}
+
+templ statusBadge(s Status) {
+	@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: utils.CN("capitalize", statusClass(s))}) {
+		<span class="size-1.5 rounded-full bg-current" aria-hidden="true"></span>
+		{ string(s) }
+	}
+}
+
+func statusClass(s Status) string {
+	switch s {
+	case StatusSucceeded:
+		return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+	case StatusPending:
+		return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+	case StatusFailed:
+		return "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400"
+	}
+	return "text-muted-foreground"
+}
+
+templ BalancesCard(balances []Balance) {
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Title() {
+				Wallet balances
+			}
+			@card.Description() {
+				Crypto held across your wallets
+			}
+			@card.Action() {
+				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Href: "/dashboard/wallets"}) {
+					Manage
+					@icon.ChevronRight(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-end"}})
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col divide-y"}) {
+			for _, b := range balances {
+				<div class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+					@tokenIcon(b.Symbol, b.Color, "")
+					<div class="flex min-w-0 flex-1 flex-col gap-1.5">
+						<div class="flex items-center justify-between gap-3 text-sm">
+							<span class="truncate font-medium">{ b.Name }</span>
+							<span class="font-medium tabular-nums">{ b.Fiat }</span>
+						</div>
+						<div class="text-muted-foreground flex items-center justify-between gap-3 text-xs tabular-nums">
+							<span class="truncate">{ b.Amount }</span>
+							<span class={ trendClass(b.Trend) }>{ b.Change }</span>
+						</div>
+					</div>
+				</div>
+			}
+		}
+		@card.Footer(card.FooterProps{Class: "grid grid-cols-3 gap-2"}) {
+			@button.Button(button.Props{Variant: button.VariantSecondary, Size: button.SizeSm}) {
+				Send
+			}
+			@button.Button(button.Props{Variant: button.VariantSecondary, Size: button.SizeSm}) {
+				Receive
+			}
+			@button.Button(button.Props{Variant: button.VariantSecondary, Size: button.SizeSm}) {
+				Swap
+			}
+		}
+	}
+}
+
+templ tokenIcon(symbol, color, class string) {
+	<span class={ utils.CN("flex size-9 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white", color, class) }>
+		{ symbol }
+	</span>
+}
+
+func trendClass(t Trend) string {
+	switch t {
+	case TrendUp:
+		return "text-emerald-600 dark:text-emerald-400"
+	case TrendDown:
+		return "text-rose-600 dark:text-rose-400"
+	}
+	return "text-muted-foreground"
+}

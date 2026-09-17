@@ -1,0 +1,14 @@
+package pages
+
+import (
+	"templ-app/blocks/dashboard"
+	"templ-app/layouts"
+)
+
+// Account is the personal account page. tab is the ?tab= query value
+// selecting the open section.
+templ Account(sandbox bool, tab string) {
+	@layouts.Dashboard(shell("Your account", "/dashboard/account", sandbox)) {
+		@dashboard.Account(dashboard.AccountFixture(sandbox), dashboard.AccountTab(tab))
+	}
+}

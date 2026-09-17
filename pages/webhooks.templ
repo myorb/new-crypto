@@ -1,0 +1,15 @@
+package pages
+
+import (
+	"templ-app/blocks/dashboard"
+	"templ-app/layouts"
+)
+
+// Webhooks is the Webhooks page with sample data. sandbox switches to the
+// simulated test dataset. Replace dashboard.WebhooksFixture() with real rows in
+// a handler.
+templ Webhooks(sandbox bool) {
+	@layouts.Dashboard(shell("Webhooks", "/dashboard/webhooks", sandbox)) {
+		@dashboard.Webhooks(dashboard.WebhooksFixture(sandbox))
+	}
+}

@@ -1,0 +1,19 @@
+package pages
+
+import (
+	"templ-app/blocks/dashboard"
+	"templ-app/layouts"
+)
+
+// Settings is the organization settings page. tab is the ?tab= query
+// value selecting the open section.
+templ Settings(sandbox bool, tab string) {
+	{{ tab = dashboard.SettingsTab(tab) }}
+	{{ active := "/dashboard/settings" }}
+	if tab == "billing" {
+		{{ active = "/dashboard/settings?tab=billing" }}
+	}
+	@layouts.Dashboard(shell("Organization settings", active, sandbox)) {
+		@dashboard.Settings(dashboard.SettingsFixture(sandbox), tab)
+	}
+}

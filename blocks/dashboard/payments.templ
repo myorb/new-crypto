@@ -1,0 +1,243 @@
+package dashboard
+
+import (
+	"fmt"
+	"templ-app/components/button"
+	"templ-app/components/card"
+	"templ-app/components/dropdownmenu"
+	"templ-app/components/icon"
+	"templ-app/components/table"
+	"templ-app/components/tabs"
+)
+
+var assetOptions = []option{
+	{Value: "all", Label: "All assets"},
+	{Value: "USDT", Label: "USDT · Tether"},
+	{Value: "USDC", Label: "USDC · USD Coin"},
+	{Value: "BTC", Label: "BTC · Bitcoin"},
+	{Value: "ETH", Label: "ETH · Ethereum"},
+	{Value: "SOL", Label: "SOL · Solana"},
+	{Value: "TRX", Label: "TRX · Tron"},
+}
+
+var networkOptions = []option{
+	{Value: "all", Label: "All networks"},
+	{Value: "tron", Label: "Tron"},
+	{Value: "ethereum", Label: "Ethereum"},
+	{Value: "arc", Label: "Arc"},
+	{Value: "solana", Label: "Solana"},
+	{Value: "bitcoin", Label: "Bitcoin"},
+}
+
+// Payments is the full payments list with status tabs and filters.
+templ Payments(d PaymentsData) {
+	<div class="grid gap-6">
+		@pageHead("Payments", "Every payment received across your wallets and payment links", d.Sandbox) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.Calendar(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				{ d.Period }
+				@icon.ChevronDown(icon.Props{Class: "text-muted-foreground", Attributes: templ.Attributes{"data-icon": "inline-end"}})
+			}
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.Download(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Export
+			}
+			@button.Button(button.Props{Size: button.SizeSm, Href: "/dashboard/links"}) {
+				@icon.Plus(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Create payment link
+			}
+		}
+		@statStrip(d.Stats)
+		@card.Card() {
+			@tabs.Tabs(tabs.Props{DefaultValue: "all", Class: "gap-(--card-spacing)"}) {
+				@card.Header(card.HeaderProps{Class: "gap-4"}) {
+					<div class="flex flex-wrap items-center justify-between gap-3">
+						@tabs.List(tabs.ListProps{Variant: tabs.VariantLine, Class: "-mx-1"}) {
+							for _, t := range paymentTabs {
+								@tabs.Trigger(tabs.TriggerProps{Value: t.Key}) {
+									{ t.Label }
+									<span class="text-muted-foreground ml-1.5 tabular-nums">{ fmt.Sprint(d.tabCount(t.Status)) }</span>
+								}
+							}
+						}
+						<div class="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-none">
+							@searchBox("Search by ID, customer or email", "")
+							@filterSelect("Asset", assetOptions, "all", "sm:w-36")
+							@filterSelect("Network", networkOptions, "all", "sm:w-36")
+						</div>
+					</div>
+				}
+				for _, t := range paymentTabs {
+					{{ rows := filterPayments(d.Rows, t.Status) }}
+					@tabs.Content(tabs.ContentProps{Value: t.Key, Class: "gap-(--card-spacing) flex flex-col"}) {
+						@card.Content(card.ContentProps{Class: "px-0"}) {
+							if len(rows) == 0 {
+								@emptyState("No payments", "Nothing matches this filter yet.")
+							} else {
+								@paymentsTable(rows)
+							}
+						}
+						if t.Status == "" {
+							@tableFooter(len(rows), d.Total, "payments")
+						} else {
+							@tableFooter(len(rows), len(rows), t.Label+" payments")
+						}
+					}
+				}
+			}
+		}
+	</div>
+}
+
+templ paymentsTable(rows []Payment) {
+	@table.Table() {
+		@table.Header() {
+			@table.Row() {
+				@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+					Payment
+				}
+				@table.Head() {
+					Customer
+				}
+				@table.Head() {
+					Method
+				}
+				@table.Head(table.HeadProps{Class: "text-right"}) {
+					Amount
+				}
+				@table.Head(table.HeadProps{Class: "hidden text-right lg:table-cell"}) {
+					Fee
+				}
+				@table.Head(table.HeadProps{Class: "hidden xl:table-cell"}) {
+					Confirmations
+				}
+				@table.Head() {
+					Status
+				}
+				@table.Head(table.HeadProps{Class: "text-right"}) {
+					Time
+				}
+				@table.Head(table.HeadProps{Class: "w-10 pr-(--card-spacing)"}) {
+					<span class="sr-only">Actions</span>
+				}
+			}
+		}
+		@table.Body() {
+			for _, p := range rows {
+				@table.Row() {
+					@table.Cell(table.CellProps{Class: "pl-(--card-spacing)"}) {
+						@monoValue(p.ID, "")
+					}
+					@table.Cell() {
+						<div class="flex flex-col">
+							<span class="font-medium">{ p.Customer }</span>
+							<span class="text-muted-foreground text-xs">{ p.Email }</span>
+						</div>
+					}
+					@table.Cell() {
+						<div class="flex items-center gap-2">
+							@tokenIcon(p.Asset, p.Color, "size-6 text-[9px]")
+							<div class="flex flex-col">
+								<span class="font-medium">{ p.Asset }</span>
+								<span class="text-muted-foreground text-xs">{ p.Network }</span>
+							</div>
+						</div>
+					}
+					@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+						<div class="flex flex-col">
+							<span class="font-medium">{ p.Fiat }</span>
+							<span class="text-muted-foreground text-xs">{ p.Amount }</span>
+						</div>
+					}
+					@table.Cell(table.CellProps{Class: "text-muted-foreground hidden text-right tabular-nums lg:table-cell"}) {
+						{ p.Fee }
+					}
+					@table.Cell(table.CellProps{Class: "hidden xl:table-cell"}) {
+						@confirmations(p.Confirmations, p.Status)
+					}
+					@table.Cell() {
+						@statusBadge(p.Status)
+					}
+					@table.Cell(table.CellProps{Class: "text-muted-foreground text-right text-xs whitespace-nowrap"}) {
+						{ p.Time }
+					}
+					@table.Cell(table.CellProps{Class: "pr-(--card-spacing) text-right"}) {
+						@paymentRowMenu(p)
+					}
+				}
+			}
+		}
+	}
+}
+
+// confirmations shows an "n/m" counter with a tiny progress track.
+templ confirmations(c string, s Status) {
+	<div class="flex items-center gap-2">
+		<span class="text-muted-foreground w-12 font-mono text-xs tabular-nums">{ c }</span>
+		<span class="bg-muted h-1.5 w-16 overflow-hidden rounded-full">
+			<span class={ "block h-full rounded-full " + confirmationBar(s) } style={ templ.SafeCSS("width:" + confirmationWidth(c)) }></span>
+		</span>
+	</div>
+}
+
+func confirmationBar(s Status) string {
+	switch s {
+	case StatusFailed:
+		return "bg-rose-500"
+	case StatusPending:
+		return "bg-amber-500"
+	}
+	return "bg-emerald-500"
+}
+
+// confirmationWidth turns "n/m" into a CSS percentage.
+func confirmationWidth(c string) string {
+	var n, m int
+	if _, err := fmt.Sscanf(c, "%d/%d", &n, &m); err != nil || m == 0 {
+		return "0%"
+	}
+	return fmt.Sprintf("%d%%", n*100/m)
+}
+
+templ paymentRowMenu(p Payment) {
+	@dropdownmenu.DropdownMenu() {
+		@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: dropdownmenu.Trigger(ctx)}) {
+			@icon.Ellipsis()
+			<span class="sr-only">Actions</span>
+		}
+		@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-48"}) {
+			@dropdownmenu.Item() {
+				@icon.Eye()
+				View details
+			}
+			@dropdownmenu.Item() {
+				@icon.Copy()
+				Copy payment ID
+			}
+			@dropdownmenu.Item() {
+				@icon.ExternalLink()
+				View on explorer
+			}
+			@dropdownmenu.Separator()
+			@dropdownmenu.Item(dropdownmenu.ItemProps{Disabled: p.Status != StatusSucceeded}) {
+				@icon.RotateCcw()
+				Refund
+			}
+			@dropdownmenu.Item() {
+				@icon.Receipt()
+				Send receipt
+			}
+		}
+	}
+}
+
+// emptyState fills a card body when a filter has no rows.
+templ emptyState(title, description string) {
+	<div class="text-muted-foreground flex flex-col items-center gap-2 px-6 py-12 text-center text-sm">
+		<span class="bg-muted flex size-10 items-center justify-center rounded-full">
+			@icon.Inbox(icon.Props{Class: "size-5"})
+		</span>
+		<span class="text-foreground font-medium">{ title }</span>
+		<span>{ description }</span>
+	</div>
+}

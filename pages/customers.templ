@@ -1,0 +1,15 @@
+package pages
+
+import (
+	"templ-app/blocks/dashboard"
+	"templ-app/layouts"
+)
+
+// Customers is the Customers page with sample data. sandbox switches to the
+// simulated test dataset. Replace dashboard.CustomersFixture() with real rows in
+// a handler.
+templ Customers(sandbox bool) {
+	@layouts.Dashboard(shell("Customers", "/dashboard/customers", sandbox)) {
+		@dashboard.Customers(dashboard.CustomersFixture(sandbox))
+	}
+}

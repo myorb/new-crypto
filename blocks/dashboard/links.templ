@@ -1,0 +1,280 @@
+package dashboard
+
+import (
+	"fmt"
+	"templ-app/components/button"
+	"templ-app/components/card"
+	"templ-app/components/dialog"
+	"templ-app/components/dropdownmenu"
+	"templ-app/components/field"
+	"templ-app/components/icon"
+	"templ-app/components/input"
+	"templ-app/components/table"
+	"templ-app/components/textarea"
+	"templ-app/utils"
+)
+
+var linkStatusOptions = []option{
+	{Value: "all", Label: "All statuses"},
+	{Value: "active", Label: "Active"},
+	{Value: "paused", Label: "Paused"},
+	{Value: "expired", Label: "Expired"},
+}
+
+// Links is the payment links page.
+templ Links(d LinksData) {
+	<div class="grid gap-6">
+		@pageHead("Payment links", "Hosted checkout pages you can share anywhere. No code required.", d.Sandbox) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.BookOpen(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Guide
+			}
+			@createLinkDialog(d)
+		}
+		@statStrip(d.Stats)
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					All links
+				}
+				@card.Description() {
+					{ fmt.Sprintf("%d links · hosted at %s", d.Total, d.Host) }
+				}
+				@card.Action(card.ActionProps{Class: "flex flex-wrap gap-2"}) {
+					@searchBox("Search links", "sm:w-56")
+					@filterSelect("Status", linkStatusOptions, "all", "sm:w-36")
+				}
+			}
+			@card.Content(card.ContentProps{Class: "px-0"}) {
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+								Link
+							}
+							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+								URL
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								Amount
+							}
+							@table.Head(table.HeadProps{Class: "hidden lg:table-cell"}) {
+								Accepts
+							}
+							@table.Head(table.HeadProps{Class: "hidden lg:table-cell"}) {
+								Conversion
+							}
+							@table.Head(table.HeadProps{Class: "hidden text-right xl:table-cell"}) {
+								Revenue
+							}
+							@table.Head() {
+								Status
+							}
+							@table.Head(table.HeadProps{Class: "hidden text-right sm:table-cell"}) {
+								Created
+							}
+							@table.Head(table.HeadProps{Class: "w-10 pr-(--card-spacing)"}) {
+								<span class="sr-only">Actions</span>
+							}
+						}
+					}
+					@table.Body() {
+						for _, l := range d.Links {
+							@table.Row() {
+								@table.Cell(table.CellProps{Class: "pl-(--card-spacing)"}) {
+									<div class="flex flex-col">
+										<span class="font-medium">{ l.Name }</span>
+										<span class="text-muted-foreground font-mono text-xs">{ l.ID }</span>
+									</div>
+								}
+								@table.Cell(table.CellProps{Class: "hidden max-w-56 md:table-cell"}) {
+									@monoValue(l.URL, "text-muted-foreground w-full")
+								}
+								@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+									if l.Amount == "" {
+										<span class="text-muted-foreground">Any amount</span>
+									} else {
+										<span class="font-medium">{ l.Amount }</span>
+									}
+								}
+								@table.Cell(table.CellProps{Class: "hidden lg:table-cell"}) {
+									@tokenStack(l.Assets)
+								}
+								@table.Cell(table.CellProps{Class: "hidden lg:table-cell"}) {
+									<div class="flex flex-col gap-1">
+										<span class="text-xs tabular-nums">{ fmt.Sprintf("%d paid · %d views", l.Paid, l.Views) }</span>
+										<span class="bg-muted h-1.5 w-24 overflow-hidden rounded-full">
+											<span class="bg-primary block h-full rounded-full" style={ templ.SafeCSS(fmt.Sprintf("width:%.0f%%", l.Conversion())) }></span>
+										</span>
+									</div>
+								}
+								@table.Cell(table.CellProps{Class: "hidden text-right tabular-nums xl:table-cell"}) {
+									{ l.Revenue }
+								}
+								@table.Cell() {
+									@pill(string(l.Status), linkStatusClass(l.Status))
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground hidden text-right text-xs whitespace-nowrap sm:table-cell"}) {
+									{ l.Created }
+									if l.Expires != "Never" {
+										<br/>
+										<span class={ utils.IfElse(l.Status == LinkExpired, "text-rose-600 dark:text-rose-400", "") }>{ "expires " + l.Expires }</span>
+									}
+								}
+								@table.Cell(table.CellProps{Class: "pr-(--card-spacing) text-right"}) {
+									@linkRowMenu(l)
+								}
+							}
+						}
+					}
+				}
+			}
+			@tableFooter(len(d.Links), d.Total, "links")
+		}
+	</div>
+}
+
+templ linkRowMenu(l PaymentLink) {
+	@dropdownmenu.DropdownMenu() {
+		@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: dropdownmenu.Trigger(ctx)}) {
+			@icon.Ellipsis()
+			<span class="sr-only">Actions</span>
+		}
+		@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-48"}) {
+			@dropdownmenu.Item() {
+				@icon.Copy()
+				Copy link
+			}
+			@dropdownmenu.Item() {
+				@icon.QrCode()
+				Show QR code
+			}
+			@dropdownmenu.Item(dropdownmenu.ItemProps{Href: l.URL, Target: "_blank"}) {
+				@icon.ExternalLink()
+				Open checkout
+			}
+			@dropdownmenu.Separator()
+			@dropdownmenu.Item() {
+				@icon.Pencil()
+				Edit
+			}
+			if l.Status == LinkPaused {
+				@dropdownmenu.Item() {
+					@icon.Play()
+					Resume
+				}
+			} else if l.Status == LinkActive {
+				@dropdownmenu.Item() {
+					@icon.Pause()
+					Pause
+				}
+			}
+			@dropdownmenu.Separator()
+			@dropdownmenu.Item(dropdownmenu.ItemProps{Variant: dropdownmenu.ItemVariantDestructive}) {
+				@icon.Trash2()
+				Delete
+			}
+		}
+	}
+}
+
+var currencyOptions = []option{
+	{Value: "USD", Label: "USD"},
+	{Value: "EUR", Label: "EUR"},
+	{Value: "GBP", Label: "GBP"},
+	{Value: "USDT", Label: "USDT"},
+	{Value: "BTC", Label: "BTC"},
+}
+
+var expiryOptions = []option{
+	{Value: "never", Label: "Never"},
+	{Value: "24h", Label: "In 24 hours"},
+	{Value: "7d", Label: "In 7 days"},
+	{Value: "30d", Label: "In 30 days"},
+}
+
+// createLinkDialog is the "Create payment link" form in a modal.
+templ createLinkDialog(d LinksData) {
+	@dialog.Dialog() {
+		@button.Button(button.Props{Size: button.SizeSm, Attributes: dialog.Trigger(ctx)}) {
+			@icon.Plus(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+			Create link
+		}
+		@dialog.Content(dialog.ContentProps{Class: "sm:max-w-lg"}) {
+			@dialog.Header() {
+				@dialog.Title() {
+					Create payment link
+				}
+				@dialog.Description() {
+					if d.Sandbox {
+						Test links only accept simulated payments.
+					} else {
+						Share the link or embed it as a button on your site.
+					}
+				}
+			}
+			<form class="grid gap-4" onsubmit="return false">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "link-name"}) {
+						Name
+					}
+					@input.Input(input.Props{ID: "link-name", Placeholder: "Pro plan · annual", Required: true})
+					@field.Description() {
+						Shown to the customer on the checkout page.
+					}
+				}
+				<div class="grid gap-4 sm:grid-cols-[1fr_8rem]">
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "link-amount"}) {
+							Amount
+						}
+						@input.Input(input.Props{ID: "link-amount", Type: "number", Placeholder: "0.00", Attributes: templ.Attributes{"step": "0.01", "min": "0"}})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "link-currency"}) {
+							Currency
+						}
+						@fieldSelect("link-currency", currencyOptions, "USD")
+					}
+				</div>
+				@checkbox("link-any-amount", "Let the customer choose the amount", false)
+				@field.Field() {
+					@field.Label() {
+						Accepted assets
+					}
+					<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+						for _, a := range assetOptions[1:] {
+							@checkbox("asset-"+a.Value, a.Value, a.Value == "USDT" || a.Value == "USDC")
+						}
+					</div>
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "link-description"}) {
+						Description
+					}
+					@textarea.Textarea(textarea.Props{ID: "link-description", Placeholder: "Optional note shown under the amount", Rows: 2})
+				}
+				<div class="grid gap-4 sm:grid-cols-2">
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "link-expiry"}) {
+							Expires
+						}
+						@fieldSelect("link-expiry", expiryOptions, "never")
+					}
+					@field.Field(field.Props{Class: "justify-end"}) {
+						@checkbox("link-reusable", "Reusable link", true)
+						@checkbox("link-collect-email", "Collect customer email", true)
+					}
+				</div>
+			</form>
+			@dialog.Footer() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Attributes: dialog.Close(ctx)}) {
+					Cancel
+				}
+				@button.Button() {
+					Create link
+				}
+			}
+		}
+	}
+}

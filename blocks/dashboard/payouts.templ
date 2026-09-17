@@ -1,0 +1,339 @@
+package dashboard
+
+import (
+	"templ-app/components/button"
+	"templ-app/components/card"
+	"templ-app/components/dialog"
+	"templ-app/components/dropdownmenu"
+	"templ-app/components/field"
+	"templ-app/components/icon"
+	"templ-app/components/input"
+	"templ-app/components/progress"
+	"templ-app/components/table"
+	"templ-app/utils"
+)
+
+var payoutStatusOptions = []option{
+	{Value: "all", Label: "All statuses"},
+	{Value: "paid", Label: "Paid"},
+	{Value: "in_transit", Label: "In transit"},
+	{Value: "pending", Label: "Pending"},
+	{Value: "failed", Label: "Failed"},
+}
+
+// Payouts is the payouts page: balances, schedule, destinations, history.
+templ Payouts(d PayoutsData) {
+	<div class="grid gap-6">
+		@pageHead("Payouts", "Move settled funds to your bank accounts and external wallets", d.Sandbox) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.Download(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Statement
+			}
+			@requestPayoutDialog(d)
+		}
+		<div class="grid gap-4 md:grid-cols-3">
+			@card.Card(card.Props{Class: "md:col-span-1"}) {
+				@card.Header() {
+					@card.Description() {
+						Available to pay out
+					}
+					@card.Title(card.TitleProps{Class: "text-3xl font-semibold tracking-tight tabular-nums"}) {
+						{ d.Available }
+					}
+				}
+				@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-2 text-xs"}) {
+					@icon.Landmark(icon.Props{Class: "size-3.5"})
+					Paid out this year: { d.PaidYTD }
+				}
+			}
+			@statTile(Stat{Label: "Pending settlement", Value: d.Pending, Hint: d.PendingHint})
+			@statTile(Stat{Label: "In transit", Value: d.InTransit, Hint: d.InTransitHint})
+		</div>
+		<div class="grid gap-4 lg:grid-cols-2">
+			@scheduleCard(d.Schedule)
+			@destinationsCard(d.Destinations)
+		</div>
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Payout history
+				}
+				@card.Description() {
+					Automatic and manual payouts, newest first
+				}
+				@card.Action(card.ActionProps{Class: "flex flex-wrap gap-2"}) {
+					@searchBox("Search payouts", "sm:w-48")
+					@filterSelect("Status", payoutStatusOptions, "all", "sm:w-36")
+				}
+			}
+			@card.Content(card.ContentProps{Class: "px-0"}) {
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+								Payout
+							}
+							@table.Head() {
+								Destination
+							}
+							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+								Method
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								Amount
+							}
+							@table.Head(table.HeadProps{Class: "hidden text-right lg:table-cell"}) {
+								Fee
+							}
+							@table.Head() {
+								Status
+							}
+							@table.Head(table.HeadProps{Class: "hidden text-right sm:table-cell"}) {
+								Initiated
+							}
+							@table.Head(table.HeadProps{Class: "hidden text-right lg:table-cell"}) {
+								Arrival
+							}
+							@table.Head(table.HeadProps{Class: "w-10 pr-(--card-spacing)"}) {
+								<span class="sr-only">Actions</span>
+							}
+						}
+					}
+					@table.Body() {
+						for _, p := range d.Payouts {
+							@table.Row() {
+								@table.Cell(table.CellProps{Class: "pl-(--card-spacing)"}) {
+									<div class="flex items-center gap-2">
+										@monoValue(p.ID, "")
+										if p.Auto {
+											<span class="text-muted-foreground bg-muted rounded-full px-1.5 py-0.5 text-[10px] font-medium">Auto</span>
+										}
+									</div>
+								}
+								@table.Cell() {
+									<div class="flex flex-col">
+										<span class="font-medium">{ p.Destination }</span>
+										<span class="text-muted-foreground text-xs">{ p.DestHint }</span>
+									</div>
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground hidden md:table-cell"}) {
+									{ p.Method }
+								}
+								@table.Cell(table.CellProps{Class: "text-right font-medium tabular-nums"}) {
+									{ p.Amount }
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground hidden text-right tabular-nums lg:table-cell"}) {
+									{ p.Fee }
+								}
+								@table.Cell() {
+									@pill(string(p.Status), payoutStatusClass(p.Status))
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground hidden text-right text-xs whitespace-nowrap sm:table-cell"}) {
+									{ p.Initiated }
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground hidden text-right text-xs whitespace-nowrap lg:table-cell"}) {
+									{ p.Arrival }
+								}
+								@table.Cell(table.CellProps{Class: "pr-(--card-spacing) text-right"}) {
+									@dropdownmenu.DropdownMenu() {
+										@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: dropdownmenu.Trigger(ctx)}) {
+											@icon.Ellipsis()
+											<span class="sr-only">Actions</span>
+										}
+										@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-44"}) {
+											@dropdownmenu.Item() {
+												@icon.Eye()
+												View details
+											}
+											@dropdownmenu.Item() {
+												@icon.FileText()
+												Download receipt
+											}
+											if p.Status == PayoutFailed {
+												@dropdownmenu.Separator()
+												@dropdownmenu.Item() {
+													@icon.RefreshCw()
+													Retry payout
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			@tableFooter(len(d.Payouts), d.Total, "payouts")
+		}
+	</div>
+}
+
+templ scheduleCard(s Schedule) {
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Title() {
+				Automatic payouts
+			}
+			@card.Description() {
+				Funds move to your default destination on a schedule or when the balance reaches a threshold
+			}
+			@card.Action() {
+				@toggle("auto-payouts", s.Enabled, "Automatic payouts")
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col gap-5"}) {
+			@progress.Progress(progress.Props{Value: s.Progress, Class: "gap-2"}) {
+				@progress.Label(progress.LabelProps{Class: "text-muted-foreground text-xs font-normal"}) {
+					{ s.Progress0 } threshold
+				}
+				@progress.Value(progress.ValueProps{Class: "text-xs"})
+			}
+			<dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+				@statRow("Frequency", s.Frequency, "Editable")
+				@statRow("Threshold", s.Threshold, "Early trigger")
+				@statRow("Minimum", s.MinAmount, "Per payout")
+				@statRow("Next payout", s.Next, "To default")
+			</dl>
+		}
+		@card.Footer(card.FooterProps{Class: "gap-2"}) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.Settings(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Edit schedule
+			}
+			<span class="text-muted-foreground ml-auto text-xs">Bank payouts take 1–3 business days</span>
+		}
+	}
+}
+
+templ destinationsCard(dests []Destination) {
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Title() {
+				Destinations
+			}
+			@card.Description() {
+				Bank accounts and wallets you can pay out to
+			}
+			@card.Action() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+					@icon.Plus(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+					Add
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col divide-y"}) {
+			for _, x := range dests {
+				<div class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+					<span class="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full">
+						if x.Kind == "bank" {
+							@icon.Landmark(icon.Props{Class: "size-4"})
+						} else {
+							@icon.Wallet(icon.Props{Class: "size-4"})
+						}
+					</span>
+					<div class="flex min-w-0 flex-1 flex-col">
+						<span class="flex items-center gap-2 text-sm font-medium">
+							{ x.Name }
+							if x.Default {
+								<span class="bg-primary/10 text-primary rounded-full px-1.5 py-0.5 text-[10px] font-medium">Default</span>
+							}
+						</span>
+						<span class="text-muted-foreground truncate text-xs">{ x.Detail } · { x.Currency }</span>
+					</div>
+					<span class={ utils.CN("flex items-center gap-1 text-xs", utils.IfElse(x.Verified, "text-emerald-600 dark:text-emerald-400", "text-amber-600 dark:text-amber-400")) }>
+						if x.Verified {
+							@icon.CircleCheck(icon.Props{Class: "size-3.5"})
+							Verified
+						} else {
+							@icon.Clock(icon.Props{Class: "size-3.5"})
+							Pending
+						}
+					</span>
+					@dropdownmenu.DropdownMenu() {
+						@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: dropdownmenu.Trigger(ctx)}) {
+							@icon.Ellipsis()
+							<span class="sr-only">Actions</span>
+						}
+						@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-44"}) {
+							@dropdownmenu.Item(dropdownmenu.ItemProps{Disabled: x.Default}) {
+								@icon.Star()
+								Make default
+							}
+							@dropdownmenu.Item() {
+								@icon.Pencil()
+								Rename
+							}
+							@dropdownmenu.Separator()
+							@dropdownmenu.Item(dropdownmenu.ItemProps{Variant: dropdownmenu.ItemVariantDestructive}) {
+								@icon.Trash2()
+								Remove
+							}
+						}
+					}
+				</div>
+			}
+		}
+	}
+}
+
+// requestPayoutDialog is the manual payout form.
+templ requestPayoutDialog(d PayoutsData) {
+	{{
+		opts := make([]option, len(d.Destinations))
+		for i, x := range d.Destinations {
+			opts[i] = option{Value: x.Name, Label: x.Name + " · " + x.Detail}
+		}
+	}}
+	@dialog.Dialog() {
+		@button.Button(button.Props{Size: button.SizeSm, Attributes: dialog.Trigger(ctx)}) {
+			@icon.ArrowUpRight(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+			Pay out
+		}
+		@dialog.Content() {
+			@dialog.Header() {
+				@dialog.Title() {
+					Request a payout
+				}
+				@dialog.Description() {
+					Available balance: { d.Available }
+				}
+			}
+			<form class="grid gap-4" onsubmit="return false">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "payout-dest"}) {
+						Destination
+					}
+					@fieldSelect("payout-dest", opts, opts[0].Value)
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "payout-amount"}) {
+						Amount
+					}
+					@input.Input(input.Props{ID: "payout-amount", Type: "number", Placeholder: "0.00", Attributes: templ.Attributes{"step": "0.01", "min": "0"}})
+					@field.Description() {
+						<button type="button" class="text-primary underline-offset-4 hover:underline">Pay out the full balance</button>
+					}
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "payout-note"}) {
+						Statement note
+					}
+					@input.Input(input.Props{ID: "payout-note", Placeholder: "Optional, shows on your bank statement"})
+				}
+				<div class="bg-muted/50 text-muted-foreground flex items-start gap-2 rounded-xl p-3 text-xs">
+					@icon.Info(icon.Props{Class: "mt-0.5 size-3.5 shrink-0"})
+					<span>Bank payouts arrive in 1–3 business days. On-chain payouts confirm within minutes and cost the network fee.</span>
+				</div>
+			</form>
+			@dialog.Footer() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Attributes: dialog.Close(ctx)}) {
+					Cancel
+				}
+				@button.Button() {
+					Confirm payout
+				}
+			}
+		}
+	}
+}

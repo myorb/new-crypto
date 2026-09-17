@@ -1,0 +1,68 @@
+// ModeToggle is the shadcn "mode toggle" (docs/dark-mode): an icon button
+// that opens a Light / Dark / System menu. The selection is persisted in
+// localStorage("theme") and applied as the .dark class on <html>, which is
+// what @custom-variant dark in globals.css keys on. Render
+// @themetoggle.InitScript() in the layout <head> so the stored theme is
+// applied before first paint.
+package themetoggle
+
+import (
+	"templ-app/components/button"
+	"templ-app/components/dropdownmenu"
+	"templ-app/components/icon"
+	"templ-app/utils"
+)
+
+type Props struct {
+	ID         string
+	Class      string
+	Attributes templ.Attributes
+	// Variant of the trigger button. Defaults to outline.
+	Variant button.Variant
+	// Align of the menu along the trigger. Defaults to end.
+	Align dropdownmenu.Align
+}
+
+templ ModeToggle(props ...Props) {
+	{{ var p Props }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	if p.Variant == "" {
+		{{ p.Variant = button.VariantOutline }}
+	}
+	if p.Align == "" {
+		{{ p.Align = dropdownmenu.AlignEnd }}
+	}
+	@dropdownmenu.DropdownMenu(dropdownmenu.Props{ID: p.ID}) {
+		@button.Button(button.Props{
+			Variant:    p.Variant,
+			Size:       button.SizeIcon,
+			Class:      utils.CN("relative", p.Class),
+			Attributes: triggerAttrs(ctx, p.Attributes),
+		}) {
+			@icon.Sun(icon.Props{Class: "scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90"})
+			@icon.Moon(icon.Props{Class: "absolute scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0"})
+			<span class="sr-only">Toggle theme</span>
+		}
+		@dropdownmenu.Content(dropdownmenu.ContentProps{Align: p.Align, Class: "w-36"}) {
+			@dropdownmenu.RadioGroup(dropdownmenu.RadioGroupProps{
+				DefaultValue: "system",
+				Attributes:   templ.Attributes{"data-tui-themetoggle": true},
+			}) {
+				@dropdownmenu.RadioItem(dropdownmenu.RadioItemProps{Value: "light"}) {
+					@icon.Sun()
+					Light
+				}
+				@dropdownmenu.RadioItem(dropdownmenu.RadioItemProps{Value: "dark"}) {
+					@icon.Moon()
+					Dark
+				}
+				@dropdownmenu.RadioItem(dropdownmenu.RadioItemProps{Value: "system"}) {
+					@icon.Monitor()
+					System
+				}
+			}
+		}
+	}
+}

@@ -1,0 +1,339 @@
+package dashboard
+
+import (
+	"fmt"
+	"strings"
+	"templ-app/components/alertdialog"
+	"templ-app/components/button"
+	"templ-app/components/card"
+	"templ-app/components/chart"
+	"templ-app/components/dialog"
+	"templ-app/components/dropdownmenu"
+	"templ-app/components/field"
+	"templ-app/components/icon"
+	"templ-app/components/input"
+	"templ-app/components/progress"
+	"templ-app/components/table"
+	"templ-app/utils"
+)
+
+// APIKeys is the developer keys page.
+templ APIKeys(d APIKeysData) {
+	<div class="grid gap-6">
+		@pageHead("API keys", "Authenticate requests to the PayChain API. Keep secret keys on your server.", d.Sandbox) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.BookOpen(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				API reference
+			}
+			@createKeyDialog(d)
+		}
+		@modeNotice(d)
+		<div class="grid gap-4 xl:grid-cols-3">
+			<div class="xl:col-span-2">
+				@keysCard(d)
+			</div>
+			<div class="grid gap-4">
+				@usageCard(d)
+				@versionCard(d)
+			</div>
+		</div>
+	</div>
+}
+
+templ modeNotice(d APIKeysData) {
+	if d.Sandbox {
+		<div class="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100" role="status">
+			@icon.FlaskConical(icon.Props{Class: "size-4 text-amber-600 dark:text-amber-400"})
+			<span class="font-medium">You are viewing test keys.</span>
+			<span class="text-amber-900/80 dark:text-amber-100/70">They only work against sandbox endpoints and never move funds.</span>
+		</div>
+	} else {
+		<div class="bg-muted/50 flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-3 text-sm" role="status">
+			@icon.ShieldCheck(icon.Props{Class: "size-4 text-emerald-600 dark:text-emerald-400"})
+			<span class="font-medium">Live keys move real funds.</span>
+			<span class="text-muted-foreground">Never commit them to source control. Switch to sandbox to get test keys.</span>
+		</div>
+	}
+}
+
+templ keysCard(d APIKeysData) {
+	@card.Card(card.Props{Class: "h-full"}) {
+		@card.Header() {
+			@card.Title() {
+				Keys
+			}
+			@card.Description() {
+				{ fmt.Sprintf("%d %s keys · secret values are shown once at creation", len(d.Keys), d.Mode) }
+			}
+		}
+		@card.Content(card.ContentProps{Class: "px-0"}) {
+			@table.Table() {
+				@table.Header() {
+					@table.Row() {
+						@table.Head(table.HeadProps{Class: "pl-(--card-spacing)"}) {
+							Name
+						}
+						@table.Head() {
+							Token
+						}
+						@table.Head(table.HeadProps{Class: "hidden lg:table-cell"}) {
+							Permissions
+						}
+						@table.Head(table.HeadProps{Class: "hidden text-right md:table-cell"}) {
+							Requests 24h
+						}
+						@table.Head(table.HeadProps{Class: "hidden text-right sm:table-cell"}) {
+							Last used
+						}
+						@table.Head(table.HeadProps{Class: "w-10 pr-(--card-spacing)"}) {
+							<span class="sr-only">Actions</span>
+						}
+					}
+				}
+				@table.Body() {
+					for _, k := range d.Keys {
+						@table.Row(table.RowProps{Class: utils.IfElse(k.Revoked, "opacity-60", "")}) {
+							@table.Cell(table.CellProps{Class: "pl-(--card-spacing)"}) {
+								<div class="flex flex-col gap-1">
+									<span class="font-medium">{ k.Name }</span>
+									<span class="flex items-center gap-1.5">
+										if k.Revoked {
+											@pill("revoked", pillBad)
+										} else {
+											@pill(string(k.Type), keyTypeClass(k.Type))
+										}
+										<span class="text-muted-foreground text-xs">Created { k.Created }</span>
+									</span>
+								</div>
+							}
+							@table.Cell() {
+								<div class="flex items-center gap-1">
+									<span class="max-w-52 truncate font-mono text-xs">{ k.Token }</span>
+									if k.Type != KeyPublishable && !k.Revoked {
+										@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Attributes: templ.Attributes{"aria-label": "Reveal key"}}) {
+											@icon.Eye()
+										}
+									}
+									@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconXs, Attributes: templ.Attributes{"aria-label": "Copy key"}}) {
+										@icon.Copy()
+									}
+								</div>
+							}
+							@table.Cell(table.CellProps{Class: "hidden lg:table-cell"}) {
+								if len(k.Scopes) == 1 && k.Scopes[0] == "all" {
+									<span class="text-muted-foreground text-xs">Full access</span>
+								} else {
+									<div class="flex max-w-56 flex-wrap gap-1">
+										for _, s := range k.Scopes {
+											<span class="bg-muted rounded-full px-2 py-0.5 font-mono text-[10px]">{ s }</span>
+										}
+									</div>
+								}
+							}
+							@table.Cell(table.CellProps{Class: "hidden text-right tabular-nums md:table-cell"}) {
+								{ k.Requests }
+							}
+							@table.Cell(table.CellProps{Class: "text-muted-foreground hidden text-right text-xs whitespace-nowrap sm:table-cell"}) {
+								{ k.LastUsed }
+							}
+							@table.Cell(table.CellProps{Class: "pr-(--card-spacing) text-right"}) {
+								@keyRowMenu(k)
+							}
+						}
+					}
+				}
+			}
+		}
+		@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-2 border-t text-xs"}) {
+			@icon.Info(icon.Props{Class: "size-3.5"})
+			Rolling a key creates a new one and keeps the old one working for 24 hours.
+		}
+	}
+}
+
+templ keyRowMenu(k APIKey) {
+	@alertdialog.AlertDialog() {
+		@dropdownmenu.DropdownMenu() {
+			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: dropdownmenu.Trigger(ctx)}) {
+				@icon.Ellipsis()
+				<span class="sr-only">Actions</span>
+			}
+			@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-48"}) {
+				@dropdownmenu.Item(dropdownmenu.ItemProps{Disabled: k.Revoked}) {
+					@icon.Pencil()
+					Rename
+				}
+				if k.Type == KeyRestricted {
+					@dropdownmenu.Item(dropdownmenu.ItemProps{Disabled: k.Revoked}) {
+						@icon.Shield()
+						Edit permissions
+					}
+				}
+				@dropdownmenu.Item(dropdownmenu.ItemProps{Disabled: k.Revoked}) {
+					@icon.RefreshCw()
+					Roll key
+				}
+				@dropdownmenu.Item() {
+					@icon.History()
+					View request log
+				}
+				@dropdownmenu.Separator()
+				@dropdownmenu.Item(dropdownmenu.ItemProps{Variant: dropdownmenu.ItemVariantDestructive, Disabled: k.Revoked || k.Type == KeyPublishable, Attributes: alertdialog.Trigger(ctx)}) {
+					@icon.Trash2()
+					Revoke
+				}
+			}
+		}
+		@alertdialog.Content(alertdialog.ContentProps{Size: alertdialog.SizeSm}) {
+			@alertdialog.Header() {
+				@alertdialog.Media() {
+					@icon.TriangleAlert()
+				}
+				@alertdialog.Title() {
+					Revoke “{ k.Name }”?
+				}
+				@alertdialog.Description() {
+					Requests signed with this key will fail immediately. This cannot be undone.
+				}
+			}
+			@alertdialog.Footer() {
+				@alertdialog.Cancel() {
+					Keep key
+				}
+				@alertdialog.Action(alertdialog.ActionProps{Variant: button.VariantDestructive}) {
+					Revoke key
+				}
+			}
+		}
+	}
+}
+
+templ usageCard(d APIKeysData) {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				API usage
+			}
+			@card.Description() {
+				Requests per day, last 14 days
+			}
+			@card.Action() {
+				@trendBadge("+9.4%", TrendUp)
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col gap-4"}) {
+			@chart.Sparkline(chart.SparklineProps{Values: d.Requests, Class: "h-16"})
+			<dl class="grid grid-cols-2 gap-3 text-sm">
+				@statRow("Requests 24h", d.Requests24, "All keys")
+				@statRow("Error rate", d.ErrorRate, "4xx + 5xx")
+			</dl>
+			@progress.Progress(progress.Props{Value: d.RateUsed, Class: "gap-2"}) {
+				@progress.Label(progress.LabelProps{Class: "text-muted-foreground text-xs font-normal"}) {
+					Rate limit · { d.RateLimit }
+				}
+				@progress.Value(progress.ValueProps{Class: "text-xs"})
+			}
+		}
+	}
+}
+
+templ versionCard(d APIKeysData) {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				API version
+			}
+			@card.Description() {
+				Requests without an explicit version header use this default
+			}
+		}
+		@card.Content(card.ContentProps{Class: "flex flex-col gap-3"}) {
+			@fieldSelect("api-version", d.Versions, d.APIVersion)
+			<div class="bg-muted/50 rounded-xl p-3 font-mono text-xs leading-relaxed">
+				<span class="text-muted-foreground">curl</span> https://api.paychain.dev/v1/payments \
+				<br/>
+				&nbsp;&nbsp;-H <span class="text-muted-foreground">"Authorization: Bearer { strings.SplitN(d.Keys[1].Token, "_•", 2)[0] }_…"</span> \
+				<br/>
+				&nbsp;&nbsp;-H <span class="text-muted-foreground">"PayChain-Version: { d.APIVersion }"</span>
+			</div>
+		}
+		@card.Footer(card.FooterProps{Class: "gap-2"}) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@icon.FileText(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+				Changelog
+			}
+			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm}) {
+				Upgrade guide
+			}
+		}
+	}
+}
+
+var keyTypeOptions = []option{
+	{Value: "restricted", Label: "Restricted · pick permissions"},
+	{Value: "secret", Label: "Secret · full access"},
+	{Value: "publishable", Label: "Publishable · client-side"},
+}
+
+templ createKeyDialog(d APIKeysData) {
+	@dialog.Dialog() {
+		@button.Button(button.Props{Size: button.SizeSm, Attributes: dialog.Trigger(ctx)}) {
+			@icon.Plus(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
+			Create key
+		}
+		@dialog.Content(dialog.ContentProps{Class: "sm:max-w-lg"}) {
+			@dialog.Header() {
+				@dialog.Title() {
+					Create { d.Mode } API key
+				}
+				@dialog.Description() {
+					The secret is shown once. Store it in your secrets manager right away.
+				}
+			}
+			<form class="grid gap-4" onsubmit="return false">
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "key-name"}) {
+						Name
+					}
+					@input.Input(input.Props{ID: "key-name", Placeholder: "e.g. Shopify connector", Required: true})
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "key-type"}) {
+						Type
+					}
+					@fieldSelect("key-type", keyTypeOptions, "restricted")
+				}
+				@field.Field() {
+					@field.Label() {
+						Permissions
+					}
+					<div class="grid gap-2 sm:grid-cols-2">
+						for _, s := range d.Scopes {
+							<label class="bg-muted/40 hover:bg-muted/70 flex cursor-pointer items-start gap-2 rounded-xl p-2.5 text-sm transition-colors">
+								<input type="checkbox" name={ "scope-" + s.Key } class="accent-primary mt-0.5 size-4 rounded" checked?={ strings.HasSuffix(s.Key, ":read") }/>
+								<span class="flex flex-col">
+									<span class="font-medium">{ s.Label }</span>
+									<span class="text-muted-foreground text-xs">{ s.Desc }</span>
+								</span>
+							</label>
+						}
+					</div>
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "key-ips"}) {
+						Allowed IPs
+					}
+					@input.Input(input.Props{ID: "key-ips", Placeholder: "Optional · comma-separated CIDRs", Class: "font-mono"})
+				}
+			</form>
+			@dialog.Footer() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Attributes: dialog.Close(ctx)}) {
+					Cancel
+				}
+				@button.Button() {
+					Create key
+				}
+			}
+		}
+	}
+}

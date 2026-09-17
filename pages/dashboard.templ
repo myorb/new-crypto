@@ -1,0 +1,15 @@
+package pages
+
+import (
+	"templ-app/blocks/dashboard"
+	"templ-app/layouts"
+)
+
+// Dashboard is the merchant overview page with sample data. sandbox
+// switches to the simulated test dataset. Replace dashboard.Fixture()
+// with real rows in a handler.
+templ Dashboard(sandbox bool) {
+	@layouts.Dashboard(shell("Overview", "/dashboard", sandbox)) {
+		@dashboard.Overview(dashboard.Fixture(sandbox))
+	}
+}

@@ -1,0 +1,370 @@
+package chart
+
+import (
+	"fmt"
+	"templ-app/utils"
+)
+
+// AreaProps configures Area. Series share one y-axis; the first one is
+// usually the current period with a gradient, the second a dashed
+// previous period.
+type AreaProps struct {
+	ID     string
+	Class  string
+	Series []Series
+	// Height is the Tailwind height class of the plot. Default "h-64".
+	Height string
+	// Ticks is the number of horizontal gridlines above the baseline. Default 4.
+	Ticks int
+	// Format renders axis and tooltip values. Default Compact.
+	Format func(float64) string
+	// XLabels is how many x-axis labels to show. Default 6.
+	XLabels int
+}
+
+func (p AreaProps) defaults() AreaProps {
+	if p.ID == "" {
+		p.ID = utils.RandomID()
+	}
+	if p.Height == "" {
+		p.Height = "h-64"
+	}
+	if p.Ticks <= 0 {
+		p.Ticks = 4
+	}
+	if p.Format == nil {
+		p.Format = Compact
+	}
+	if p.XLabels <= 0 {
+		p.XLabels = 6
+	}
+	return p
+}
+
+func (p AreaProps) count() int {
+	n := 0
+	for _, s := range p.Series {
+		n = max(n, len(s.Points))
+	}
+	return n
+}
+
+func (p AreaProps) label(i int) string {
+	for _, s := range p.Series {
+		if i < len(s.Points) && s.Points[i].Label != "" {
+			return s.Points[i].Label
+		}
+	}
+	return ""
+}
+
+// Area is a responsive line/area chart with gridlines, y-axis labels, a
+// sampled x-axis and CSS-only hover tooltips (no JavaScript).
+templ Area(p AreaProps) {
+	{{ p = p.defaults() }}
+	{{ yMax := seriesMax(p.Series) }}
+	{{ n := p.count() }}
+	<div
+		data-slot="chart-area"
+		class={ utils.CN("text-muted-foreground grid grid-cols-[auto_1fr] grid-rows-[1fr_auto] gap-x-3 gap-y-2 text-xs", p.Class) }
+	>
+		<div class={ utils.CN("-my-2 flex flex-col justify-between text-right tabular-nums", p.Height) }>
+			for i := p.Ticks; i >= 0; i-- {
+				<span class="leading-4">{ p.Format(yMax * float64(i) / float64(p.Ticks)) }</span>
+			}
+		</div>
+		<div class={ utils.CN("relative", p.Height) }>
+			<svg class="absolute inset-0 size-full overflow-visible" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true">
+				<defs>
+					for i, s := range p.Series {
+						if !s.NoFill {
+							<linearGradient id={ fmt.Sprintf("%s-g%d", p.ID, i) } x1="0" y1="0" x2="0" y2="1">
+								<stop offset="0%" stop-color={ s.Color } stop-opacity="0.32"></stop>
+								<stop offset="100%" stop-color={ s.Color } stop-opacity="0"></stop>
+							</linearGradient>
+						}
+					}
+				</defs>
+				for i := 0; i <= p.Ticks; i++ {
+					<line
+						x1="0"
+						x2="1000"
+						y1={ tickY(i, p.Ticks) }
+						y2={ tickY(i, p.Ticks) }
+						stroke="var(--border)"
+						vector-effect="non-scaling-stroke"
+						if i > 0 {
+							stroke-dasharray="3 4"
+						}
+					></line>
+				}
+				for i, s := range p.Series {
+					{{ c := coords(s.Points, yMax) }}
+					if !s.NoFill {
+						<path d={ areaPath(c) } fill={ fmt.Sprintf("url(#%s-g%d)", p.ID, i) }></path>
+					}
+					<path
+						d={ linePath(c) }
+						fill="none"
+						stroke={ s.Color }
+						stroke-width={ utils.IfElse(s.Dashed, "1.5", "2") }
+						stroke-linejoin="round"
+						stroke-linecap="round"
+						vector-effect="non-scaling-stroke"
+						if s.Dashed {
+							stroke-dasharray="5 5"
+						}
+					></path>
+				}
+			</svg>
+			<div class="absolute inset-0" aria-hidden="true">
+				for i, r := range regions(n) {
+					<div class="group absolute inset-y-0" style={ templ.SafeCSS("left:" + r.Left + ";width:" + r.Width) }>
+						<span class={ utils.CN("bg-foreground/25 absolute inset-y-0 w-px opacity-0 transition-opacity group-hover:opacity-100", r.markerClass()) }></span>
+						for _, s := range p.Series {
+							if i < len(s.Points) {
+								<span
+									class={ utils.CN("ring-background absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 ring-2 transition-opacity group-hover:opacity-100", r.markerClass()) }
+									style={ templ.SafeCSS("top:" + pctTop(s.Points[i].Value, yMax) + ";background:" + s.Color) }
+								></span>
+							}
+						}
+						<div class={ utils.CN("bg-popover text-popover-foreground pointer-events-none absolute top-0 z-10 hidden min-w-44 flex-col gap-1.5 rounded-lg border p-2.5 shadow-md group-hover:flex", r.tooltipClass()) }>
+							<span class="text-foreground font-medium">{ p.label(i) }</span>
+							for _, s := range p.Series {
+								if i < len(s.Points) {
+									<span class="flex items-center gap-2">
+										<span class="size-2 shrink-0 rounded-xs" style={ templ.SafeCSS("background:" + s.Color) }></span>
+										<span class="text-muted-foreground whitespace-nowrap">{ s.Name }</span>
+										<span class="text-foreground ml-auto font-medium tabular-nums">{ p.Format(s.Points[i].Value) }</span>
+									</span>
+								}
+							}
+						</div>
+					</div>
+				}
+			</div>
+		</div>
+		<div class="relative col-start-2 h-4">
+			for _, i := range labelIndices(n, p.XLabels) {
+				<span class={ utils.CN("absolute top-0 whitespace-nowrap", xLabelClass(i, n)) } style={ templ.SafeCSS("left:" + xPct(i, n)) }>{ p.label(i) }</span>
+			}
+		</div>
+	</div>
+}
+
+// BarsProps configures Bars, a stacked column chart.
+type BarsProps struct {
+	ID     string
+	Class  string
+	Groups []Group
+	Series []Legend
+	// Height is the Tailwind height class of the plot. Default "h-48".
+	Height string
+	// Ticks is the number of horizontal gridlines above the baseline. Default 4.
+	Ticks int
+	// Format renders axis and tooltip values. Default Compact.
+	Format func(float64) string
+	// XLabels is how many x-axis labels to show. Default 7.
+	XLabels int
+}
+
+func (p BarsProps) defaults() BarsProps {
+	if p.ID == "" {
+		p.ID = utils.RandomID()
+	}
+	if p.Height == "" {
+		p.Height = "h-48"
+	}
+	if p.Ticks <= 0 {
+		p.Ticks = 4
+	}
+	if p.Format == nil {
+		p.Format = Compact
+	}
+	if p.XLabels <= 0 {
+		p.XLabels = 7
+	}
+	return p
+}
+
+func (p BarsProps) showLabel(i int) bool {
+	for _, k := range labelIndices(len(p.Groups), p.XLabels) {
+		if k == i {
+			return true
+		}
+	}
+	return false
+}
+
+func (p BarsProps) total(g Group) float64 {
+	sum := 0.0
+	for _, v := range g.Values {
+		sum += v
+	}
+	return sum
+}
+
+// Bars is a responsive stacked column chart built from flex boxes, with
+// gridlines, axes and CSS-only hover tooltips.
+templ Bars(p BarsProps) {
+	{{ p = p.defaults() }}
+	{{ yMax := groupsMax(p.Groups) }}
+	<div
+		data-slot="chart-bars"
+		class={ utils.CN("text-muted-foreground grid grid-cols-[auto_1fr] grid-rows-[1fr_auto] gap-x-3 gap-y-2 text-xs", p.Class) }
+	>
+		<div class={ utils.CN("-my-2 flex flex-col justify-between text-right tabular-nums", p.Height) }>
+			for i := p.Ticks; i >= 0; i-- {
+				<span class="leading-4">{ p.Format(yMax * float64(i) / float64(p.Ticks)) }</span>
+			}
+		</div>
+		<div class={ utils.CN("relative", p.Height) }>
+			<div class="absolute inset-0 flex flex-col justify-between" aria-hidden="true">
+				for i := 0; i <= p.Ticks; i++ {
+					<span class={ utils.CN("border-t", utils.IfElse(i < p.Ticks, "border-dashed", "")) }></span>
+				}
+			</div>
+			<div class="absolute inset-0 flex items-end gap-1 sm:gap-1.5">
+				for _, g := range p.Groups {
+					<div class="group relative flex h-full flex-1 flex-col justify-end">
+						<span class="group-hover:bg-foreground/5 absolute -inset-x-0.5 inset-y-0 rounded-sm transition-colors" aria-hidden="true"></span>
+						<div class="relative flex h-full flex-col-reverse gap-px">
+							for j, v := range g.Values {
+								if j < len(p.Series) && v > 0 {
+									<span
+										class="w-full last:rounded-t-sm"
+										style={ templ.SafeCSS("height:" + pctHeight(v, yMax) + ";background:" + p.Series[j].Color) }
+									></span>
+								}
+							}
+						</div>
+						<div class="bg-popover text-popover-foreground pointer-events-none absolute top-0 left-1/2 z-10 hidden min-w-44 -translate-x-1/2 flex-col gap-1.5 rounded-lg border p-2.5 shadow-md group-hover:flex">
+							<span class="text-foreground font-medium">{ g.Label }</span>
+							for j, s := range p.Series {
+								if j < len(g.Values) {
+									<span class="flex items-center gap-2">
+										<span class="size-2 shrink-0 rounded-xs" style={ templ.SafeCSS("background:" + s.Color) }></span>
+										<span class="text-muted-foreground whitespace-nowrap">{ s.Name }</span>
+										<span class="text-foreground ml-auto font-medium tabular-nums">{ p.Format(g.Values[j]) }</span>
+									</span>
+								}
+							}
+							<span class="flex items-center gap-2 border-t pt-1.5">
+								<span class="text-muted-foreground">Total</span>
+								<span class="text-foreground ml-auto font-medium tabular-nums">{ p.Format(p.total(g)) }</span>
+							</span>
+						</div>
+					</div>
+				}
+			</div>
+		</div>
+		<div class="col-start-2 flex h-4 gap-1 sm:gap-1.5">
+			for i, g := range p.Groups {
+				<span class="relative flex-1">
+					if p.showLabel(i) {
+						<span class="absolute top-0 left-1/2 -translate-x-1/2 whitespace-nowrap">{ g.Label }</span>
+					}
+				</span>
+			}
+		</div>
+	</div>
+}
+
+// DonutProps configures Donut. Children render in the hole.
+type DonutProps struct {
+	ID     string
+	Class  string
+	Slices []Slice
+	// Thickness is the ring width as a percentage of the diameter. Default 12.
+	Thickness float64
+}
+
+func (p DonutProps) defaults() DonutProps {
+	if p.Thickness <= 0 {
+		p.Thickness = 12
+	}
+	return p
+}
+
+// Donut is a ring chart drawn with stroke-dasharray on one circle per slice.
+templ Donut(p DonutProps) {
+	{{ p = p.defaults() }}
+	{{ r, arcs := donutArcs(p.Slices, p.Thickness) }}
+	<div
+		data-slot="chart-donut"
+		if p.ID != "" {
+			id={ p.ID }
+		}
+		class={ utils.CN("relative aspect-square", p.Class) }
+	>
+		<svg class="size-full -rotate-90" viewBox="0 0 100 100" aria-hidden="true">
+			<circle cx="50" cy="50" r={ r } fill="none" stroke="var(--muted)" stroke-width={ f(p.Thickness) }></circle>
+			for _, a := range arcs {
+				<circle
+					cx="50"
+					cy="50"
+					r={ r }
+					fill="none"
+					stroke={ a.Color }
+					stroke-width={ f(p.Thickness) }
+					stroke-dasharray={ a.Dash }
+					stroke-dashoffset={ a.Offset }
+					class="transition-opacity hover:opacity-75"
+				>
+					<title>{ a.Label }</title>
+				</circle>
+			}
+		</svg>
+		<div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+			{ children... }
+		</div>
+	</div>
+}
+
+// SparklineProps configures Sparkline, a tiny trend line for stat tiles.
+type SparklineProps struct {
+	ID     string
+	Class  string
+	Values []float64
+	// Color is any CSS color. Default "var(--chart-1)".
+	Color string
+}
+
+func (p SparklineProps) defaults() SparklineProps {
+	if p.ID == "" {
+		p.ID = utils.RandomID()
+	}
+	if p.Color == "" {
+		p.Color = "var(--chart-1)"
+	}
+	return p
+}
+
+// Sparkline is an axis-free line with a soft gradient, scaled to its own
+// min and max so small movements stay readable.
+templ Sparkline(p SparklineProps) {
+	{{ p = p.defaults() }}
+	{{ c := sparkCoords(p.Values) }}
+	<svg
+		data-slot="chart-sparkline"
+		class={ utils.CN("h-10 w-full overflow-visible", p.Class) }
+		viewBox="0 0 1000 100"
+		preserveAspectRatio="none"
+		aria-hidden="true"
+	>
+		<defs>
+			<linearGradient id={ p.ID + "-g" } x1="0" y1="0" x2="0" y2="1">
+				<stop offset="0%" stop-color={ p.Color } stop-opacity="0.3"></stop>
+				<stop offset="100%" stop-color={ p.Color } stop-opacity="0"></stop>
+			</linearGradient>
+		</defs>
+		<path d={ areaPath(c) } fill={ "url(#" + p.ID + "-g)" }></path>
+		<path d={ linePath(c) } fill="none" stroke={ p.Color } stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
+	</svg>
+}
+
+// Swatch is a small colour square for legends.
+templ Swatch(color string) {
+	<span class="size-2.5 shrink-0 rounded-xs" style={ templ.SafeCSS("background:" + color) } aria-hidden="true"></span>
+}
