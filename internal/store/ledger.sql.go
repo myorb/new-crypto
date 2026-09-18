@@ -8,8 +8,29 @@ package store
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const createLedgerAccount = `-- name: CreateLedgerAccount :execrows
+INSERT INTO ledger_accounts (organization_id, asset_id, type)
+VALUES ($3, $1, $2)
+ON CONFLICT DO NOTHING
+`
+
+type CreateLedgerAccountParams struct {
+	AssetID        int16
+	Type           LedgerAccountType
+	OrganizationID uuid.NullUUID
+}
+
+func (q *Queries) CreateLedgerAccount(ctx context.Context, arg CreateLedgerAccountParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createLedgerAccount, arg.AssetID, arg.Type, arg.OrganizationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
 
 const createLedgerEntry = `-- name: CreateLedgerEntry :one
 INSERT INTO ledger_entries (journal_id, account_id, amount)
@@ -18,8 +39,8 @@ RETURNING id, journal_id, account_id, amount, created_at
 `
 
 type CreateLedgerEntryParams struct {
-	JournalID pgtype.UUID
-	AccountID pgtype.UUID
+	JournalID uuid.UUID
+	AccountID uuid.UUID
 	Amount    pgtype.Numeric
 }
 
@@ -45,8 +66,8 @@ RETURNING id, event_type, reference_type, reference_id, description, created_at
 type CreateLedgerJournalParams struct {
 	EventType     string
 	ReferenceType string
-	ReferenceID   pgtype.UUID
-	Description   pgtype.Text
+	ReferenceID   uuid.UUID
+	Description   *string
 }
 
 func (q *Queries) CreateLedgerJournal(ctx context.Context, arg CreateLedgerJournalParams) (LedgerJournal, error) {
@@ -78,7 +99,7 @@ WHERE organization_id IS NOT DISTINCT FROM $3
 type GetLedgerAccountParams struct {
 	AssetID        int16
 	Type           LedgerAccountType
-	OrganizationID pgtype.UUID
+	OrganizationID uuid.NullUUID
 }
 
 func (q *Queries) GetLedgerAccount(ctx context.Context, arg GetLedgerAccountParams) (LedgerAccount, error) {
@@ -94,6 +115,71 @@ func (q *Queries) GetLedgerAccount(ctx context.Context, arg GetLedgerAccountPara
 	return i, err
 }
 
+const getLedgerBalance = `-- name: GetLedgerBalance :one
+SELECT COALESCE(b.balance, 0)::crypto_amount AS balance
+FROM ledger_accounts a
+LEFT JOIN ledger_balances b ON b.account_id = a.id
+WHERE a.id = $1
+`
+
+func (q *Queries) GetLedgerBalance(ctx context.Context, id uuid.UUID) (pgtype.Numeric, error) {
+	row := q.db.QueryRow(ctx, getLedgerBalance, id)
+	var balance pgtype.Numeric
+	err := row.Scan(&balance)
+	return balance, err
+}
+
+const getLedgerJournalByReference = `-- name: GetLedgerJournalByReference :one
+SELECT id, event_type, reference_type, reference_id, description, created_at FROM ledger_journals
+WHERE event_type = $1 AND reference_type = $2 AND reference_id = $3
+`
+
+type GetLedgerJournalByReferenceParams struct {
+	EventType     string
+	ReferenceType string
+	ReferenceID   uuid.UUID
+}
+
+func (q *Queries) GetLedgerJournalByReference(ctx context.Context, arg GetLedgerJournalByReferenceParams) (LedgerJournal, error) {
+	row := q.db.QueryRow(ctx, getLedgerJournalByReference, arg.EventType, arg.ReferenceType, arg.ReferenceID)
+	var i LedgerJournal
+	err := row.Scan(
+		&i.ID,
+		&i.EventType,
+		&i.ReferenceType,
+		&i.ReferenceID,
+		&i.Description,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getMerchantBalance = `-- name: GetMerchantBalance :one
+SELECT organization_id, asset_id, asset_code, symbol, network_code, available, pending, locked FROM merchant_balances
+WHERE organization_id = $1 AND asset_id = $2
+`
+
+type GetMerchantBalanceParams struct {
+	OrganizationID uuid.NullUUID
+	AssetID        int16
+}
+
+func (q *Queries) GetMerchantBalance(ctx context.Context, arg GetMerchantBalanceParams) (MerchantBalance, error) {
+	row := q.db.QueryRow(ctx, getMerchantBalance, arg.OrganizationID, arg.AssetID)
+	var i MerchantBalance
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.AssetID,
+		&i.AssetCode,
+		&i.Symbol,
+		&i.NetworkCode,
+		&i.Available,
+		&i.Pending,
+		&i.Locked,
+	)
+	return i, err
+}
+
 const getMerchantBalances = `-- name: GetMerchantBalances :many
 
 SELECT organization_id, asset_id, asset_code, symbol, network_code, available, pending, locked FROM merchant_balances
@@ -101,15 +187,16 @@ WHERE organization_id = $1
 ORDER BY asset_code
 `
 
-// Ledger reads. Postings (journals + entries) are written inside one
-// transaction by the app; the database checks that they balance at COMMIT.
-func (q *Queries) GetMerchantBalances(ctx context.Context, organizationID pgtype.UUID) ([]MerchantBalance, error) {
+// Ledger. Postings (journals + entries) are written inside one transaction by
+// internal/ledger; the database checks that they balance at COMMIT and keeps
+// ledger_balances current through a trigger. Nothing here is ever updated.
+func (q *Queries) GetMerchantBalances(ctx context.Context, organizationID uuid.NullUUID) ([]MerchantBalance, error) {
 	rows, err := q.db.Query(ctx, getMerchantBalances, organizationID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []MerchantBalance
+	items := []MerchantBalance{}
 	for rows.Next() {
 		var i MerchantBalance
 		if err := rows.Scan(
@@ -121,6 +208,142 @@ func (q *Queries) GetMerchantBalances(ctx context.Context, organizationID pgtype
 			&i.Available,
 			&i.Pending,
 			&i.Locked,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLedgerEntriesForAccount = `-- name: ListLedgerEntriesForAccount :many
+SELECT e.id, e.journal_id, e.account_id, e.amount, e.created_at, j.id, j.event_type, j.reference_type, j.reference_id, j.description, j.created_at
+FROM ledger_entries e
+JOIN ledger_journals j ON j.id = e.journal_id
+WHERE e.account_id = $1
+ORDER BY e.id DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListLedgerEntriesForAccountParams struct {
+	AccountID uuid.UUID
+	Limit     int32
+	Offset    int32
+}
+
+type ListLedgerEntriesForAccountRow struct {
+	LedgerEntry   LedgerEntry
+	LedgerJournal LedgerJournal
+}
+
+func (q *Queries) ListLedgerEntriesForAccount(ctx context.Context, arg ListLedgerEntriesForAccountParams) ([]ListLedgerEntriesForAccountRow, error) {
+	rows, err := q.db.Query(ctx, listLedgerEntriesForAccount, arg.AccountID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLedgerEntriesForAccountRow{}
+	for rows.Next() {
+		var i ListLedgerEntriesForAccountRow
+		if err := rows.Scan(
+			&i.LedgerEntry.ID,
+			&i.LedgerEntry.JournalID,
+			&i.LedgerEntry.AccountID,
+			&i.LedgerEntry.Amount,
+			&i.LedgerEntry.CreatedAt,
+			&i.LedgerJournal.ID,
+			&i.LedgerJournal.EventType,
+			&i.LedgerJournal.ReferenceType,
+			&i.LedgerJournal.ReferenceID,
+			&i.LedgerJournal.Description,
+			&i.LedgerJournal.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLedgerEntriesForJournal = `-- name: ListLedgerEntriesForJournal :many
+SELECT e.id, e.journal_id, e.account_id, e.amount, e.created_at, a.id, a.organization_id, a.asset_id, a.type, a.created_at
+FROM ledger_entries e
+JOIN ledger_accounts a ON a.id = e.account_id
+WHERE e.journal_id = $1
+ORDER BY e.id
+`
+
+type ListLedgerEntriesForJournalRow struct {
+	LedgerEntry   LedgerEntry
+	LedgerAccount LedgerAccount
+}
+
+func (q *Queries) ListLedgerEntriesForJournal(ctx context.Context, journalID uuid.UUID) ([]ListLedgerEntriesForJournalRow, error) {
+	rows, err := q.db.Query(ctx, listLedgerEntriesForJournal, journalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLedgerEntriesForJournalRow{}
+	for rows.Next() {
+		var i ListLedgerEntriesForJournalRow
+		if err := rows.Scan(
+			&i.LedgerEntry.ID,
+			&i.LedgerEntry.JournalID,
+			&i.LedgerEntry.AccountID,
+			&i.LedgerEntry.Amount,
+			&i.LedgerEntry.CreatedAt,
+			&i.LedgerAccount.ID,
+			&i.LedgerAccount.OrganizationID,
+			&i.LedgerAccount.AssetID,
+			&i.LedgerAccount.Type,
+			&i.LedgerAccount.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlatformBalances = `-- name: ListPlatformBalances :many
+SELECT a.id, a.organization_id, a.asset_id, a.type, a.created_at, COALESCE(b.balance, 0)::crypto_amount AS balance
+FROM ledger_accounts a
+LEFT JOIN ledger_balances b ON b.account_id = a.id
+WHERE a.organization_id IS NULL
+ORDER BY a.asset_id, a.type
+`
+
+type ListPlatformBalancesRow struct {
+	LedgerAccount LedgerAccount
+	Balance       pgtype.Numeric
+}
+
+func (q *Queries) ListPlatformBalances(ctx context.Context) ([]ListPlatformBalancesRow, error) {
+	rows, err := q.db.Query(ctx, listPlatformBalances)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlatformBalancesRow{}
+	for rows.Next() {
+		var i ListPlatformBalancesRow
+		if err := rows.Scan(
+			&i.LedgerAccount.ID,
+			&i.LedgerAccount.OrganizationID,
+			&i.LedgerAccount.AssetID,
+			&i.LedgerAccount.Type,
+			&i.LedgerAccount.CreatedAt,
+			&i.Balance,
 		); err != nil {
 			return nil, err
 		}

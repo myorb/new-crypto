@@ -7,22 +7,36 @@ package store
 
 import (
 	"context"
+	"net/netip"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acceptOrganizationInvitation = `-- name: AcceptOrganizationInvitation :exec
+UPDATE organization_invitations SET accepted_at = now() WHERE id = $1
+`
+
+func (q *Queries) AcceptOrganizationInvitation(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, acceptOrganizationInvitation, id)
+	return err
+}
+
 const addOrganizationMember = `-- name: AddOrganizationMember :exec
+
 INSERT INTO organization_members (organization_id, user_id, role, invited_by)
 VALUES ($1, $2, $3, $4)
 `
 
 type AddOrganizationMemberParams struct {
-	OrganizationID pgtype.UUID
-	UserID         pgtype.UUID
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
 	Role           OrganizationRole
-	InvitedBy      pgtype.UUID
+	InvitedBy      uuid.NullUUID
 }
 
+// Membership -----------------------------------------------------------------
 func (q *Queries) AddOrganizationMember(ctx context.Context, arg AddOrganizationMemberParams) error {
 	_, err := q.db.Exec(ctx, addOrganizationMember,
 		arg.OrganizationID,
@@ -31,6 +45,66 @@ func (q *Queries) AddOrganizationMember(ctx context.Context, arg AddOrganization
 		arg.InvitedBy,
 	)
 	return err
+}
+
+const countOrganizationOwners = `-- name: CountOrganizationOwners :one
+SELECT count(*) FROM organization_members
+WHERE organization_id = $1 AND role = 'owner'
+`
+
+func (q *Queries) CountOrganizationOwners(ctx context.Context, organizationID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrganizationOwners, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createAPIKey = `-- name: CreateAPIKey :one
+
+INSERT INTO api_keys (organization_id, name, key_prefix, key_hash, scopes, ip_allowlist, created_by, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, organization_id, name, key_prefix, key_hash, scopes, ip_allowlist, created_by, last_used_at, expires_at, revoked_at, created_at
+`
+
+type CreateAPIKeyParams struct {
+	OrganizationID uuid.UUID
+	Name           string
+	KeyPrefix      string
+	KeyHash        []byte
+	Scopes         []string
+	IpAllowlist    []netip.Prefix
+	CreatedBy      uuid.NullUUID
+	ExpiresAt      *time.Time
+}
+
+// API keys -------------------------------------------------------------------
+func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error) {
+	row := q.db.QueryRow(ctx, createAPIKey,
+		arg.OrganizationID,
+		arg.Name,
+		arg.KeyPrefix,
+		arg.KeyHash,
+		arg.Scopes,
+		arg.IpAllowlist,
+		arg.CreatedBy,
+		arg.ExpiresAt,
+	)
+	var i ApiKey
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.KeyPrefix,
+		&i.KeyHash,
+		&i.Scopes,
+		&i.IpAllowlist,
+		&i.CreatedBy,
+		&i.LastUsedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const createOrganization = `-- name: CreateOrganization :one
@@ -42,7 +116,7 @@ RETURNING id, slug, name, legal_name, country_code, status, kyb_verified_at, def
 type CreateOrganizationParams struct {
 	Slug            string
 	Name            string
-	LegalName       pgtype.Text
+	LegalName       *string
 	CountryCode     pgtype.Text
 	DefaultCurrency string
 }
@@ -73,14 +147,148 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 	return i, err
 }
 
+const createOrganizationInvitation = `-- name: CreateOrganizationInvitation :one
+
+INSERT INTO organization_invitations (organization_id, email, role, token_hash, invited_by, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, organization_id, email, role, token_hash, invited_by, expires_at, accepted_at, revoked_at, created_at
+`
+
+type CreateOrganizationInvitationParams struct {
+	OrganizationID uuid.UUID
+	Email          string
+	Role           OrganizationRole
+	TokenHash      []byte
+	InvitedBy      uuid.UUID
+	ExpiresAt      time.Time
+}
+
+// Invitations ----------------------------------------------------------------
+func (q *Queries) CreateOrganizationInvitation(ctx context.Context, arg CreateOrganizationInvitationParams) (OrganizationInvitation, error) {
+	row := q.db.QueryRow(ctx, createOrganizationInvitation,
+		arg.OrganizationID,
+		arg.Email,
+		arg.Role,
+		arg.TokenHash,
+		arg.InvitedBy,
+		arg.ExpiresAt,
+	)
+	var i OrganizationInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Email,
+		&i.Role,
+		&i.TokenHash,
+		&i.InvitedBy,
+		&i.ExpiresAt,
+		&i.AcceptedAt,
+		&i.RevokedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteOrganizationAsset = `-- name: DeleteOrganizationAsset :execrows
+DELETE FROM organization_assets
+WHERE organization_id = $1 AND asset_id = $2
+`
+
+type DeleteOrganizationAssetParams struct {
+	OrganizationID uuid.UUID
+	AssetID        int16
+}
+
+func (q *Queries) DeleteOrganizationAsset(ctx context.Context, arg DeleteOrganizationAssetParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOrganizationAsset, arg.OrganizationID, arg.AssetID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getAPIKey = `-- name: GetAPIKey :one
+SELECT id, organization_id, name, key_prefix, key_hash, scopes, ip_allowlist, created_by, last_used_at, expires_at, revoked_at, created_at FROM api_keys WHERE id = $1 AND organization_id = $2
+`
+
+type GetAPIKeyParams struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+}
+
+func (q *Queries) GetAPIKey(ctx context.Context, arg GetAPIKeyParams) (ApiKey, error) {
+	row := q.db.QueryRow(ctx, getAPIKey, arg.ID, arg.OrganizationID)
+	var i ApiKey
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.KeyPrefix,
+		&i.KeyHash,
+		&i.Scopes,
+		&i.IpAllowlist,
+		&i.CreatedBy,
+		&i.LastUsedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getAPIKeyByHash = `-- name: GetAPIKeyByHash :one
+SELECT k.id, k.organization_id, k.name, k.key_prefix, k.key_hash, k.scopes, k.ip_allowlist, k.created_by, k.last_used_at, k.expires_at, k.revoked_at, k.created_at, o.id, o.slug, o.name, o.legal_name, o.country_code, o.status, o.kyb_verified_at, o.default_currency, o.require_mfa, o.settings, o.created_at, o.updated_at
+FROM api_keys k
+JOIN organizations o ON o.id = k.organization_id
+WHERE k.key_hash = $1
+`
+
+type GetAPIKeyByHashRow struct {
+	ApiKey       ApiKey
+	Organization Organization
+}
+
+func (q *Queries) GetAPIKeyByHash(ctx context.Context, keyHash []byte) (GetAPIKeyByHashRow, error) {
+	row := q.db.QueryRow(ctx, getAPIKeyByHash, keyHash)
+	var i GetAPIKeyByHashRow
+	err := row.Scan(
+		&i.ApiKey.ID,
+		&i.ApiKey.OrganizationID,
+		&i.ApiKey.Name,
+		&i.ApiKey.KeyPrefix,
+		&i.ApiKey.KeyHash,
+		&i.ApiKey.Scopes,
+		&i.ApiKey.IpAllowlist,
+		&i.ApiKey.CreatedBy,
+		&i.ApiKey.LastUsedAt,
+		&i.ApiKey.ExpiresAt,
+		&i.ApiKey.RevokedAt,
+		&i.ApiKey.CreatedAt,
+		&i.Organization.ID,
+		&i.Organization.Slug,
+		&i.Organization.Name,
+		&i.Organization.LegalName,
+		&i.Organization.CountryCode,
+		&i.Organization.Status,
+		&i.Organization.KybVerifiedAt,
+		&i.Organization.DefaultCurrency,
+		&i.Organization.RequireMfa,
+		&i.Organization.Settings,
+		&i.Organization.CreatedAt,
+		&i.Organization.UpdatedAt,
+	)
+	return i, err
+}
+
 const getOrganization = `-- name: GetOrganization :one
 
 SELECT id, slug, name, legal_name, country_code, status, kyb_verified_at, default_currency, require_mfa, settings, created_at, updated_at FROM organizations
 WHERE id = $1
 `
 
-// Organizations (merchants) and membership.
-func (q *Queries) GetOrganization(ctx context.Context, id pgtype.UUID) (Organization, error) {
+// Organizations (merchants), membership, invitations, API keys and per-merchant
+// asset settings. Owned by internal/org.
+func (q *Queries) GetOrganization(ctx context.Context, id uuid.UUID) (Organization, error) {
 	row := q.db.QueryRow(ctx, getOrganization, id)
 	var i Organization
 	err := row.Scan(
@@ -96,6 +304,29 @@ func (q *Queries) GetOrganization(ctx context.Context, id pgtype.UUID) (Organiza
 		&i.Settings,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getOrganizationAsset = `-- name: GetOrganizationAsset :one
+SELECT organization_id, asset_id, is_enabled, preferred_provider_id, auto_withdraw_to FROM organization_assets
+WHERE organization_id = $1 AND asset_id = $2
+`
+
+type GetOrganizationAssetParams struct {
+	OrganizationID uuid.UUID
+	AssetID        int16
+}
+
+func (q *Queries) GetOrganizationAsset(ctx context.Context, arg GetOrganizationAssetParams) (OrganizationAsset, error) {
+	row := q.db.QueryRow(ctx, getOrganizationAsset, arg.OrganizationID, arg.AssetID)
+	var i OrganizationAsset
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.AssetID,
+		&i.IsEnabled,
+		&i.PreferredProviderID,
+		&i.AutoWithdrawTo,
 	)
 	return i, err
 }
@@ -125,6 +356,237 @@ func (q *Queries) GetOrganizationBySlug(ctx context.Context, slug string) (Organ
 	return i, err
 }
 
+const getOrganizationInvitationByTokenHash = `-- name: GetOrganizationInvitationByTokenHash :one
+SELECT id, organization_id, email, role, token_hash, invited_by, expires_at, accepted_at, revoked_at, created_at FROM organization_invitations
+WHERE token_hash = $1
+  AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+`
+
+func (q *Queries) GetOrganizationInvitationByTokenHash(ctx context.Context, tokenHash []byte) (OrganizationInvitation, error) {
+	row := q.db.QueryRow(ctx, getOrganizationInvitationByTokenHash, tokenHash)
+	var i OrganizationInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Email,
+		&i.Role,
+		&i.TokenHash,
+		&i.InvitedBy,
+		&i.ExpiresAt,
+		&i.AcceptedAt,
+		&i.RevokedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getOrganizationMember = `-- name: GetOrganizationMember :one
+SELECT organization_id, user_id, role, invited_by, joined_at FROM organization_members
+WHERE organization_id = $1 AND user_id = $2
+`
+
+type GetOrganizationMemberParams struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+}
+
+func (q *Queries) GetOrganizationMember(ctx context.Context, arg GetOrganizationMemberParams) (OrganizationMember, error) {
+	row := q.db.QueryRow(ctx, getOrganizationMember, arg.OrganizationID, arg.UserID)
+	var i OrganizationMember
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.InvitedBy,
+		&i.JoinedAt,
+	)
+	return i, err
+}
+
+const listAPIKeys = `-- name: ListAPIKeys :many
+SELECT id, organization_id, name, key_prefix, key_hash, scopes, ip_allowlist, created_by, last_used_at, expires_at, revoked_at, created_at FROM api_keys
+WHERE organization_id = $1
+ORDER BY (revoked_at IS NULL) DESC, created_at DESC
+`
+
+func (q *Queries) ListAPIKeys(ctx context.Context, organizationID uuid.UUID) ([]ApiKey, error) {
+	rows, err := q.db.Query(ctx, listAPIKeys, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ApiKey{}
+	for rows.Next() {
+		var i ApiKey
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.Name,
+			&i.KeyPrefix,
+			&i.KeyHash,
+			&i.Scopes,
+			&i.IpAllowlist,
+			&i.CreatedBy,
+			&i.LastUsedAt,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOpenOrganizationInvitations = `-- name: ListOpenOrganizationInvitations :many
+SELECT id, organization_id, email, role, token_hash, invited_by, expires_at, accepted_at, revoked_at, created_at FROM organization_invitations
+WHERE organization_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListOpenOrganizationInvitations(ctx context.Context, organizationID uuid.UUID) ([]OrganizationInvitation, error) {
+	rows, err := q.db.Query(ctx, listOpenOrganizationInvitations, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OrganizationInvitation{}
+	for rows.Next() {
+		var i OrganizationInvitation
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.Email,
+			&i.Role,
+			&i.TokenHash,
+			&i.InvitedBy,
+			&i.ExpiresAt,
+			&i.AcceptedAt,
+			&i.RevokedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationAssets = `-- name: ListOrganizationAssets :many
+SELECT oa.organization_id, oa.asset_id, oa.is_enabled, oa.preferred_provider_id, oa.auto_withdraw_to, a.id, a.network_id, a.code, a.symbol, a.name, a.kind, a.token_standard, a.contract_address, a.decimals, a.is_stablecoin, a.logo_url, a.min_deposit, a.min_withdrawal, a.is_enabled, n.code AS network_code, n.name AS network_name
+FROM organization_assets oa
+JOIN assets a   ON a.id = oa.asset_id
+JOIN networks n ON n.id = a.network_id
+WHERE oa.organization_id = $1
+ORDER BY n.code, a.code
+`
+
+type ListOrganizationAssetsRow struct {
+	OrganizationAsset OrganizationAsset
+	Asset             Asset
+	NetworkCode       string
+	NetworkName       string
+}
+
+func (q *Queries) ListOrganizationAssets(ctx context.Context, organizationID uuid.UUID) ([]ListOrganizationAssetsRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationAssets, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrganizationAssetsRow{}
+	for rows.Next() {
+		var i ListOrganizationAssetsRow
+		if err := rows.Scan(
+			&i.OrganizationAsset.OrganizationID,
+			&i.OrganizationAsset.AssetID,
+			&i.OrganizationAsset.IsEnabled,
+			&i.OrganizationAsset.PreferredProviderID,
+			&i.OrganizationAsset.AutoWithdrawTo,
+			&i.Asset.ID,
+			&i.Asset.NetworkID,
+			&i.Asset.Code,
+			&i.Asset.Symbol,
+			&i.Asset.Name,
+			&i.Asset.Kind,
+			&i.Asset.TokenStandard,
+			&i.Asset.ContractAddress,
+			&i.Asset.Decimals,
+			&i.Asset.IsStablecoin,
+			&i.Asset.LogoUrl,
+			&i.Asset.MinDeposit,
+			&i.Asset.MinWithdrawal,
+			&i.Asset.IsEnabled,
+			&i.NetworkCode,
+			&i.NetworkName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationMembers = `-- name: ListOrganizationMembers :many
+SELECT m.organization_id, m.user_id, m.role, m.invited_by, m.joined_at, u.id, u.email, u.password_hash, u.full_name, u.avatar_url, u.status, u.email_verified_at, u.mfa_required, u.last_login_at, u.created_at, u.updated_at
+FROM organization_members m
+JOIN users u ON u.id = m.user_id
+WHERE m.organization_id = $1
+ORDER BY m.joined_at
+`
+
+type ListOrganizationMembersRow struct {
+	OrganizationMember OrganizationMember
+	User               User
+}
+
+func (q *Queries) ListOrganizationMembers(ctx context.Context, organizationID uuid.UUID) ([]ListOrganizationMembersRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationMembers, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrganizationMembersRow{}
+	for rows.Next() {
+		var i ListOrganizationMembersRow
+		if err := rows.Scan(
+			&i.OrganizationMember.OrganizationID,
+			&i.OrganizationMember.UserID,
+			&i.OrganizationMember.Role,
+			&i.OrganizationMember.InvitedBy,
+			&i.OrganizationMember.JoinedAt,
+			&i.User.ID,
+			&i.User.Email,
+			&i.User.PasswordHash,
+			&i.User.FullName,
+			&i.User.AvatarUrl,
+			&i.User.Status,
+			&i.User.EmailVerifiedAt,
+			&i.User.MfaRequired,
+			&i.User.LastLoginAt,
+			&i.User.CreatedAt,
+			&i.User.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrganizationsForUser = `-- name: ListOrganizationsForUser :many
 SELECT o.id, o.slug, o.name, o.legal_name, o.country_code, o.status, o.kyb_verified_at, o.default_currency, o.require_mfa, o.settings, o.created_at, o.updated_at, m.role
 FROM organizations o
@@ -134,43 +596,32 @@ ORDER BY o.name
 `
 
 type ListOrganizationsForUserRow struct {
-	ID              pgtype.UUID
-	Slug            string
-	Name            string
-	LegalName       pgtype.Text
-	CountryCode     pgtype.Text
-	Status          OrganizationStatus
-	KybVerifiedAt   pgtype.Timestamptz
-	DefaultCurrency string
-	RequireMfa      bool
-	Settings        []byte
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	Role            OrganizationRole
+	Organization Organization
+	Role         OrganizationRole
 }
 
-func (q *Queries) ListOrganizationsForUser(ctx context.Context, userID pgtype.UUID) ([]ListOrganizationsForUserRow, error) {
+func (q *Queries) ListOrganizationsForUser(ctx context.Context, userID uuid.UUID) ([]ListOrganizationsForUserRow, error) {
 	rows, err := q.db.Query(ctx, listOrganizationsForUser, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListOrganizationsForUserRow
+	items := []ListOrganizationsForUserRow{}
 	for rows.Next() {
 		var i ListOrganizationsForUserRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Name,
-			&i.LegalName,
-			&i.CountryCode,
-			&i.Status,
-			&i.KybVerifiedAt,
-			&i.DefaultCurrency,
-			&i.RequireMfa,
-			&i.Settings,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.Organization.ID,
+			&i.Organization.Slug,
+			&i.Organization.Name,
+			&i.Organization.LegalName,
+			&i.Organization.CountryCode,
+			&i.Organization.Status,
+			&i.Organization.KybVerifiedAt,
+			&i.Organization.DefaultCurrency,
+			&i.Organization.RequireMfa,
+			&i.Organization.Settings,
+			&i.Organization.CreatedAt,
+			&i.Organization.UpdatedAt,
 			&i.Role,
 		); err != nil {
 			return nil, err
@@ -181,4 +632,187 @@ func (q *Queries) ListOrganizationsForUser(ctx context.Context, userID pgtype.UU
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeOrganizationMember = `-- name: RemoveOrganizationMember :execrows
+DELETE FROM organization_members
+WHERE organization_id = $1 AND user_id = $2
+`
+
+type RemoveOrganizationMemberParams struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+}
+
+func (q *Queries) RemoveOrganizationMember(ctx context.Context, arg RemoveOrganizationMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, removeOrganizationMember, arg.OrganizationID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const revokeAPIKey = `-- name: RevokeAPIKey :execrows
+UPDATE api_keys SET revoked_at = now()
+WHERE id = $1 AND organization_id = $2 AND revoked_at IS NULL
+`
+
+type RevokeAPIKeyParams struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+}
+
+func (q *Queries) RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeAPIKey, arg.ID, arg.OrganizationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const revokeOrganizationInvitation = `-- name: RevokeOrganizationInvitation :execrows
+UPDATE organization_invitations SET revoked_at = now()
+WHERE id = $1 AND organization_id = $2 AND accepted_at IS NULL AND revoked_at IS NULL
+`
+
+type RevokeOrganizationInvitationParams struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+}
+
+func (q *Queries) RevokeOrganizationInvitation(ctx context.Context, arg RevokeOrganizationInvitationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeOrganizationInvitation, arg.ID, arg.OrganizationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setOrganizationStatus = `-- name: SetOrganizationStatus :exec
+UPDATE organizations
+SET status = $2,
+    kyb_verified_at = CASE WHEN $2 = 'active'::organization_status THEN COALESCE(kyb_verified_at, now()) ELSE kyb_verified_at END
+WHERE id = $1
+`
+
+type SetOrganizationStatusParams struct {
+	ID     uuid.UUID
+	Status OrganizationStatus
+}
+
+func (q *Queries) SetOrganizationStatus(ctx context.Context, arg SetOrganizationStatusParams) error {
+	_, err := q.db.Exec(ctx, setOrganizationStatus, arg.ID, arg.Status)
+	return err
+}
+
+const touchAPIKey = `-- name: TouchAPIKey :exec
+UPDATE api_keys SET last_used_at = now() WHERE id = $1
+`
+
+func (q *Queries) TouchAPIKey(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, touchAPIKey, id)
+	return err
+}
+
+const updateOrganization = `-- name: UpdateOrganization :one
+UPDATE organizations
+SET name = $2, legal_name = $3, country_code = $4, default_currency = $5, require_mfa = $6, settings = $7
+WHERE id = $1
+RETURNING id, slug, name, legal_name, country_code, status, kyb_verified_at, default_currency, require_mfa, settings, created_at, updated_at
+`
+
+type UpdateOrganizationParams struct {
+	ID              uuid.UUID
+	Name            string
+	LegalName       *string
+	CountryCode     pgtype.Text
+	DefaultCurrency string
+	RequireMfa      bool
+	Settings        []byte
+}
+
+func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error) {
+	row := q.db.QueryRow(ctx, updateOrganization,
+		arg.ID,
+		arg.Name,
+		arg.LegalName,
+		arg.CountryCode,
+		arg.DefaultCurrency,
+		arg.RequireMfa,
+		arg.Settings,
+	)
+	var i Organization
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.LegalName,
+		&i.CountryCode,
+		&i.Status,
+		&i.KybVerifiedAt,
+		&i.DefaultCurrency,
+		&i.RequireMfa,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateOrganizationMemberRole = `-- name: UpdateOrganizationMemberRole :execrows
+UPDATE organization_members SET role = $3
+WHERE organization_id = $1 AND user_id = $2
+`
+
+type UpdateOrganizationMemberRoleParams struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+	Role           OrganizationRole
+}
+
+func (q *Queries) UpdateOrganizationMemberRole(ctx context.Context, arg UpdateOrganizationMemberRoleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateOrganizationMemberRole, arg.OrganizationID, arg.UserID, arg.Role)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const upsertOrganizationAsset = `-- name: UpsertOrganizationAsset :one
+
+INSERT INTO organization_assets (organization_id, asset_id, is_enabled, preferred_provider_id, auto_withdraw_to)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (organization_id, asset_id) DO UPDATE
+    SET is_enabled            = EXCLUDED.is_enabled,
+        preferred_provider_id = EXCLUDED.preferred_provider_id,
+        auto_withdraw_to      = EXCLUDED.auto_withdraw_to
+RETURNING organization_id, asset_id, is_enabled, preferred_provider_id, auto_withdraw_to
+`
+
+type UpsertOrganizationAssetParams struct {
+	OrganizationID      uuid.UUID
+	AssetID             int16
+	IsEnabled           bool
+	PreferredProviderID pgtype.Int2
+	AutoWithdrawTo      *string
+}
+
+// Per-merchant asset settings -------------------------------------------------
+func (q *Queries) UpsertOrganizationAsset(ctx context.Context, arg UpsertOrganizationAssetParams) (OrganizationAsset, error) {
+	row := q.db.QueryRow(ctx, upsertOrganizationAsset,
+		arg.OrganizationID,
+		arg.AssetID,
+		arg.IsEnabled,
+		arg.PreferredProviderID,
+		arg.AutoWithdrawTo,
+	)
+	var i OrganizationAsset
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.AssetID,
+		&i.IsEnabled,
+		&i.PreferredProviderID,
+		&i.AutoWithdrawTo,
+	)
+	return i, err
 }

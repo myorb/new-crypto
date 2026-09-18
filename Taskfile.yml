@@ -148,3 +148,17 @@ tasks:
     desc: Start development server with hot reload
     cmds:
       - task --parallel tailwind templ
+
+  # ---------------------------------------------------------------------------
+  # Tests
+  # ---------------------------------------------------------------------------
+  test:
+    desc: Unit tests (no database)
+    cmds:
+      - go vet ./...
+      - go test ./...
+
+  test:integration:
+    desc: End-to-end lifecycle test against the dev database (creates rows; see internal/README.md)
+    cmds:
+      - TEST_DATABASE_URL={{.DATABASE_URL}} go test ./internal/app/ -run Integration -count=1 -v

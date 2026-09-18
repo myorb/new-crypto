@@ -10,7 +10,41 @@ sql:
         out: "internal/store"
         sql_package: "pgx/v5"
         emit_enum_valid_method: true
+        emit_empty_slices: true
         overrides:
+          # Plain Go types instead of pgtype wrappers where the mapping is lossless.
+          - db_type: "uuid"
+            go_type: "github.com/google/uuid.UUID"
+          - db_type: "uuid"
+            nullable: true
+            go_type: "github.com/google/uuid.NullUUID"
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          - db_type: "text"
+            nullable: true
+            go_type:
+              type: "string"
+              pointer: true
+          - db_type: "citext"
+            go_type: "string"
+          - db_type: "citext"
+            nullable: true
+            go_type:
+              type: "string"
+              pointer: true
+          - db_type: "bpchar"
+            go_type: "string"
+          - db_type: "bpchar"
+            nullable: true
+            go_type:
+              type: "string"
+              pointer: true
           # crypto_amount is a NUMERIC(38,18) domain; map it like NUMERIC.
           - db_type: "crypto_amount"
             go_type: "github.com/jackc/pgx/v5/pgtype.Numeric"

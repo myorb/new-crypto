@@ -1,99 +1,86 @@
+// Command templ-app serves the merchant dashboard and runs the background
+// workers. Configuration comes from the environment (see .env.example and
+// internal/app.Config). Without DATABASE_URL it still serves the fixture
+// pages so the UI can be developed on its own.
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
-	"strings"
+	"syscall"
+	"time"
 
-	"github.com/a-h/templ"
-
-	"templ-app/components"
-	"templ-app/pages"
+	"templ-app/internal/app"
+	"templ-app/internal/web"
+	"templ-app/internal/worker"
 )
 
 func main() {
-	mux := http.NewServeMux()
-	setupAssetsRoutes(mux)
-	mux.Handle("GET /", templ.Handler(pages.Home()))
-	dashboardPages := map[string]func(sandbox bool) templ.Component{
-		"/dashboard":           pages.Dashboard,
-		"/dashboard/payments":  pages.Payments,
-		"/dashboard/links":     pages.Links,
-		"/dashboard/payouts":   pages.Payouts,
-		"/dashboard/wallets":   pages.Wallets,
-		"/dashboard/customers": pages.Customers,
-		"/dashboard/api-keys":  pages.APIKeys,
-		"/dashboard/webhooks":  pages.Webhooks,
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	for route, page := range dashboardPages {
-		mux.HandleFunc("GET "+route, func(w http.ResponseWriter, r *http.Request) {
-			templ.Handler(page(isSandbox(r))).ServeHTTP(w, r)
-		})
+}
+
+func run() error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	cfg := app.ConfigFromEnv()
+	level := slog.LevelInfo
+	if !cfg.Production() {
+		level = slog.LevelDebug
 	}
-	// Settings pages take a ?tab= section, e.g. /dashboard/settings?tab=billing.
-	tabbedPages := map[string]func(sandbox bool, tab string) templ.Component{
-		"/dashboard/settings": pages.Settings,
-		"/dashboard/account":  pages.Account,
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(log)
+
+	var a *app.App
+	if cfg.DatabaseURL == "" {
+		log.Warn("DATABASE_URL not set: serving fixture pages only, no workers")
+	} else {
+		var err error
+		if a, err = app.New(ctx, cfg, log); err != nil {
+			return err
+		}
+		defer a.Close()
 	}
-	for route, page := range tabbedPages {
-		mux.HandleFunc("GET "+route, func(w http.ResponseWriter, r *http.Request) {
-			templ.Handler(page(isSandbox(r), r.URL.Query().Get("tab"))).ServeHTTP(w, r)
-		})
-	}
-	mux.HandleFunc("GET /mode", setMode)
-	// Auth screens are frontend-only mocks: forms navigate to the next step
-	// client-side. Wire real handlers behind the same paths.
-	mux.Handle("GET /login", templ.Handler(pages.Login()))
-	mux.Handle("GET /signup", templ.Handler(pages.Signup()))
-	mux.Handle("GET /forgot-password", templ.Handler(pages.ForgotPassword()))
-	mux.Handle("GET /2fa/setup", templ.Handler(pages.Setup2FA()))
-	mux.HandleFunc("GET /verify", func(w http.ResponseWriter, r *http.Request) {
-		templ.Handler(pages.Verify(r.URL.Query().Get("method"))).ServeHTTP(w, r)
-	})
 
 	ln, err := listen()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
-	fmt.Printf("Server is running on http://localhost:%d\n", ln.Addr().(*net.TCPAddr).Port)
-	if err := http.Serve(ln, mux); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	srv := &http.Server{
+		Handler:           web.New(a).Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
-}
 
-// modeCookie stores whether the merchant is viewing live or sandbox data.
-const modeCookie = "pc_mode"
-
-func isSandbox(r *http.Request) bool {
-	c, err := r.Cookie(modeCookie)
-	return err == nil && c.Value == "sandbox"
-}
-
-// setMode switches between live and sandbox (GET /mode?set=sandbox&next=/dashboard)
-// and redirects back to the page the switch was on.
-func setMode(w http.ResponseWriter, r *http.Request) {
-	mode := "live"
-	if r.URL.Query().Get("set") == "sandbox" {
-		mode = "sandbox"
+	errc := make(chan error, 1)
+	go func() {
+		fmt.Printf("Server is running on http://localhost:%d\n", ln.Addr().(*net.TCPAddr).Port)
+		errc <- srv.Serve(ln)
+	}()
+	if a != nil {
+		go worker.Run(ctx, a, worker.Intervals{})
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     modeCookie,
-		Value:    mode,
-		Path:     "/",
-		MaxAge:   60 * 60 * 24 * 365,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
-	next := r.URL.Query().Get("next")
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
-		next = "/dashboard"
+
+	select {
+	case err := <-errc:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+	case <-ctx.Done():
 	}
-	http.Redirect(w, r, next, http.StatusSeeOther)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return srv.Shutdown(shutdownCtx)
 }
 
 // listen binds the port. An explicit PORT binds exactly (the templ proxy in
@@ -119,19 +106,4 @@ func listen() (net.Listener, error) {
 		}
 	}
 	return nil, fmt.Errorf("no free port found from 8090 upwards")
-}
-
-func setupAssetsRoutes(mux *http.ServeMux) {
-	assetHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if os.Getenv("GO_ENV") != "production" {
-			w.Header().Set("Cache-Control", "no-store")
-		} else {
-			w.Header().Set("Cache-Control", "public, max-age=31536000")
-		}
-		http.FileServer(http.Dir("./assets")).ServeHTTP(w, r)
-	})
-	mux.Handle("GET /assets/", http.StripPrefix("/assets/", assetHandler))
-
-	// The component JS bundle (hashed name plus the shadcn-templ.js alias).
-	mux.Handle("GET /components/{bundle}", components.ScriptsHandler())
 }

@@ -8,7 +8,9 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"net/netip"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -1123,42 +1125,42 @@ func (e WithdrawalStatus) Valid() bool {
 }
 
 type Address struct {
-	ID                pgtype.UUID
+	ID                uuid.UUID
 	NetworkID         int16
 	ProviderID        int16
-	WalletID          pgtype.UUID
-	OrganizationID    pgtype.UUID
+	WalletID          uuid.UUID
+	OrganizationID    uuid.NullUUID
 	Address           string
-	Memo              pgtype.Text
+	Memo              *string
 	Kind              WalletKind
 	DerivationIndex   pgtype.Int8
-	ExternalAddressID pgtype.Text
+	ExternalAddressID *string
 	IsActive          bool
-	LastUsedAt        pgtype.Timestamptz
-	CreatedAt         pgtype.Timestamptz
+	LastUsedAt        *time.Time
+	CreatedAt         time.Time
 }
 
 type AddressBalance struct {
-	AddressID pgtype.UUID
+	AddressID uuid.UUID
 	AssetID   int16
 	Balance   pgtype.Numeric
 	AsOfBlock int64
-	UpdatedAt pgtype.Timestamptz
+	UpdatedAt time.Time
 }
 
 type ApiKey struct {
-	ID             pgtype.UUID
-	OrganizationID pgtype.UUID
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
 	Name           string
 	KeyPrefix      string
 	KeyHash        []byte
 	Scopes         []string
 	IpAllowlist    []netip.Prefix
-	CreatedBy      pgtype.UUID
-	LastUsedAt     pgtype.Timestamptz
-	ExpiresAt      pgtype.Timestamptz
-	RevokedAt      pgtype.Timestamptz
-	CreatedAt      pgtype.Timestamptz
+	CreatedBy      uuid.NullUUID
+	LastUsedAt     *time.Time
+	ExpiresAt      *time.Time
+	RevokedAt      *time.Time
+	CreatedAt      time.Time
 }
 
 type Asset struct {
@@ -1168,11 +1170,11 @@ type Asset struct {
 	Symbol          string
 	Name            string
 	Kind            AssetKind
-	TokenStandard   pgtype.Text
-	ContractAddress pgtype.Text
+	TokenStandard   *string
+	ContractAddress *string
 	Decimals        int16
 	IsStablecoin    bool
-	LogoUrl         pgtype.Text
+	LogoUrl         *string
 	MinDeposit      pgtype.Numeric
 	MinWithdrawal   pgtype.Numeric
 	IsEnabled       bool
@@ -1180,53 +1182,53 @@ type Asset struct {
 
 type AuditLog struct {
 	ID             int64
-	OrganizationID pgtype.UUID
-	ActorUserID    pgtype.UUID
-	ActorApiKeyID  pgtype.UUID
+	OrganizationID uuid.NullUUID
+	ActorUserID    uuid.NullUUID
+	ActorApiKeyID  uuid.NullUUID
 	Action         string
-	EntityType     pgtype.Text
-	EntityID       pgtype.Text
+	EntityType     *string
+	EntityID       *string
 	IpAddress      *netip.Addr
 	Metadata       []byte
-	CreatedAt      pgtype.Timestamptz
+	CreatedAt      time.Time
 }
 
 type AuthChallenge struct {
-	ID                pgtype.UUID
-	UserID            pgtype.UUID
-	SessionID         pgtype.UUID
-	IdentityID        pgtype.UUID
+	ID                uuid.UUID
+	UserID            uuid.UUID
+	SessionID         uuid.NullUUID
+	IdentityID        uuid.NullUUID
 	Purpose           AuthChallengePurpose
 	TokenHash         []byte
-	MethodID          pgtype.UUID
+	MethodID          uuid.NullUUID
 	WebauthnChallenge []byte
 	OtpHash           []byte
 	Attempts          int16
 	MaxAttempts       int16
 	IpAddress         *netip.Addr
-	UserAgent         pgtype.Text
-	CreatedAt         pgtype.Timestamptz
-	ExpiresAt         pgtype.Timestamptz
-	VerifiedAt        pgtype.Timestamptz
+	UserAgent         *string
+	CreatedAt         time.Time
+	ExpiresAt         time.Time
+	VerifiedAt        *time.Time
 }
 
 type ChainCursor struct {
 	ProviderID       int16
 	NetworkID        int16
 	LastScannedBlock int64
-	LastScannedHash  pgtype.Text
-	ExternalCursor   pgtype.Text
-	UpdatedAt        pgtype.Timestamptz
+	LastScannedHash  *string
+	ExternalCursor   *string
+	UpdatedAt        time.Time
 }
 
 type Event struct {
-	ID             pgtype.UUID
-	OrganizationID pgtype.UUID
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
 	Type           string
 	ResourceType   string
-	ResourceID     pgtype.UUID
+	ResourceID     uuid.UUID
 	Payload        []byte
-	CreatedAt      pgtype.Timestamptz
+	CreatedAt      time.Time
 }
 
 type ExchangeRate struct {
@@ -1235,12 +1237,12 @@ type ExchangeRate struct {
 	Quote       string
 	Rate        pgtype.Numeric
 	Source      string
-	FetchedAt   pgtype.Timestamptz
+	FetchedAt   time.Time
 }
 
 type FeeSchedule struct {
-	ID                 pgtype.UUID
-	OrganizationID     pgtype.UUID
+	ID                 uuid.UUID
+	OrganizationID     uuid.NullUUID
 	AssetID            pgtype.Int2
 	DepositFeeBps      int32
 	DepositFeeFixed    pgtype.Numeric
@@ -1252,126 +1254,126 @@ type FeeSchedule struct {
 	WithdrawalFeeBps   int32
 	WithdrawalFeeFixed pgtype.Numeric
 	PassNetworkFee     bool
-	FixedFeeCurrency   pgtype.Text
-	EffectiveFrom      pgtype.Timestamptz
-	EffectiveTo        pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
+	FixedFeeCurrency   *string
+	EffectiveFrom      time.Time
+	EffectiveTo        *time.Time
+	CreatedAt          time.Time
 }
 
 type IdempotencyKey struct {
-	OrganizationID pgtype.UUID
+	OrganizationID uuid.UUID
 	IdempotencyKey string
 	RequestHash    []byte
 	ResponseCode   pgtype.Int2
 	ResponseBody   []byte
-	CreatedAt      pgtype.Timestamptz
-	ExpiresAt      pgtype.Timestamptz
+	CreatedAt      time.Time
+	ExpiresAt      time.Time
 }
 
 type InternalTransfer struct {
-	ID            pgtype.UUID
+	ID            uuid.UUID
 	Kind          InternalTransferKind
 	AssetID       int16
 	ProviderID    int16
-	FromAddressID pgtype.UUID
-	ToAddressID   pgtype.UUID
+	FromAddressID uuid.UUID
+	ToAddressID   uuid.UUID
 	Amount        pgtype.Numeric
 	Status        InternalTransferStatus
-	TransactionID pgtype.UUID
-	ExternalRef   pgtype.Text
+	TransactionID uuid.NullUUID
+	ExternalRef   *string
 	EnergyUsed    pgtype.Int8
 	BandwidthUsed pgtype.Int8
 	CostNative    pgtype.Numeric
-	FailureReason pgtype.Text
-	CreatedAt     pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
+	FailureReason *string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 type Invoice struct {
-	ID              pgtype.UUID
-	OrganizationID  pgtype.UUID
-	ExternalID      pgtype.Text
+	ID              uuid.UUID
+	OrganizationID  uuid.UUID
+	ExternalID      *string
 	PriceCurrency   string
 	PriceAmount     pgtype.Numeric
 	Status          InvoiceStatus
-	Description     pgtype.Text
-	CustomerEmail   pgtype.Text
-	CallbackUrl     pgtype.Text
-	ReturnUrl       pgtype.Text
+	Description     *string
+	CustomerEmail   *string
+	CallbackUrl     *string
+	ReturnUrl       *string
 	Metadata        []byte
-	ExpiresAt       pgtype.Timestamptz
-	PaidAt          pgtype.Timestamptz
-	ConfirmedAt     pgtype.Timestamptz
-	CompletedAt     pgtype.Timestamptz
-	CreatedByApiKey pgtype.UUID
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
+	ExpiresAt       time.Time
+	PaidAt          *time.Time
+	ConfirmedAt     *time.Time
+	CompletedAt     *time.Time
+	CreatedByApiKey uuid.NullUUID
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type InvoicePaymentOption struct {
-	ID              pgtype.UUID
-	InvoiceID       pgtype.UUID
+	ID              uuid.UUID
+	InvoiceID       uuid.UUID
 	AssetID         int16
 	ProviderID      int16
-	AddressID       pgtype.UUID
-	Memo            pgtype.Text
+	AddressID       uuid.NullUUID
+	Memo            *string
 	AmountDue       pgtype.Numeric
 	AmountPaid      pgtype.Numeric
 	ExchangeRate    pgtype.Numeric
 	SourceRate      pgtype.Numeric
 	SpreadBps       pgtype.Int4
 	RateID          pgtype.Int8
-	RateLockedUntil pgtype.Timestamptz
+	RateLockedUntil *time.Time
 	IsSelected      bool
-	SelectedAt      pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
+	SelectedAt      *time.Time
+	CreatedAt       time.Time
 }
 
 type LedgerAccount struct {
-	ID             pgtype.UUID
-	OrganizationID pgtype.UUID
+	ID             uuid.UUID
+	OrganizationID uuid.NullUUID
 	AssetID        int16
 	Type           LedgerAccountType
-	CreatedAt      pgtype.Timestamptz
+	CreatedAt      time.Time
 }
 
 type LedgerBalance struct {
-	AccountID pgtype.UUID
+	AccountID uuid.UUID
 	Balance   pgtype.Numeric
-	UpdatedAt pgtype.Timestamptz
+	UpdatedAt time.Time
 }
 
 type LedgerEntry struct {
 	ID        int64
-	JournalID pgtype.UUID
-	AccountID pgtype.UUID
+	JournalID uuid.UUID
+	AccountID uuid.UUID
 	Amount    pgtype.Numeric
-	CreatedAt pgtype.Timestamptz
+	CreatedAt time.Time
 }
 
 type LedgerJournal struct {
-	ID            pgtype.UUID
+	ID            uuid.UUID
 	EventType     string
 	ReferenceType string
-	ReferenceID   pgtype.UUID
-	Description   pgtype.Text
-	CreatedAt     pgtype.Timestamptz
+	ReferenceID   uuid.UUID
+	Description   *string
+	CreatedAt     time.Time
 }
 
 type LoginAttempt struct {
 	ID            int64
-	Email         pgtype.Text
-	UserID        pgtype.UUID
+	Email         *string
+	UserID        uuid.NullUUID
 	Provider      NullAuthProvider
 	IpAddress     netip.Addr
-	UserAgent     pgtype.Text
+	UserAgent     *string
 	Success       bool
-	FailureReason pgtype.Text
-	CreatedAt     pgtype.Timestamptz
+	FailureReason *string
+	CreatedAt     time.Time
 }
 
 type MerchantBalance struct {
-	OrganizationID pgtype.UUID
+	OrganizationID uuid.NullUUID
 	AssetID        int16
 	AssetCode      string
 	Symbol         string
@@ -1391,11 +1393,11 @@ type Network struct {
 	NativeDecimals        int16
 	RequiredConfirmations int32
 	AvgBlockTimeMs        int32
-	AddressRegex          pgtype.Text
-	TxHashRegex           pgtype.Text
+	AddressRegex          *string
+	TxHashRegex           *string
 	SupportsMemo          bool
-	ExplorerTxUrl         pgtype.Text
-	ExplorerAddressUrl    pgtype.Text
+	ExplorerTxUrl         *string
+	ExplorerAddressUrl    *string
 	IsTestnet             bool
 	IsEnabled             bool
 }
@@ -1404,81 +1406,81 @@ type OauthState struct {
 	StateHash       []byte
 	Provider        AuthProvider
 	PkceVerifierEnc []byte
-	Nonce           pgtype.Text
+	Nonce           *string
 	RedirectUri     string
-	LinkToUserID    pgtype.UUID
-	InvitationID    pgtype.UUID
+	LinkToUserID    uuid.NullUUID
+	InvitationID    uuid.NullUUID
 	IpAddress       *netip.Addr
-	CreatedAt       pgtype.Timestamptz
-	ExpiresAt       pgtype.Timestamptz
-	ConsumedAt      pgtype.Timestamptz
+	CreatedAt       time.Time
+	ExpiresAt       time.Time
+	ConsumedAt      *time.Time
 }
 
 type Organization struct {
-	ID              pgtype.UUID
+	ID              uuid.UUID
 	Slug            string
 	Name            string
-	LegalName       pgtype.Text
+	LegalName       *string
 	CountryCode     pgtype.Text
 	Status          OrganizationStatus
-	KybVerifiedAt   pgtype.Timestamptz
+	KybVerifiedAt   *time.Time
 	DefaultCurrency string
 	RequireMfa      bool
 	Settings        []byte
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type OrganizationAsset struct {
-	OrganizationID      pgtype.UUID
+	OrganizationID      uuid.UUID
 	AssetID             int16
 	IsEnabled           bool
 	PreferredProviderID pgtype.Int2
-	AutoWithdrawTo      pgtype.Text
+	AutoWithdrawTo      *string
 }
 
 type OrganizationInvitation struct {
-	ID             pgtype.UUID
-	OrganizationID pgtype.UUID
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
 	Email          string
 	Role           OrganizationRole
 	TokenHash      []byte
-	InvitedBy      pgtype.UUID
-	ExpiresAt      pgtype.Timestamptz
-	AcceptedAt     pgtype.Timestamptz
-	RevokedAt      pgtype.Timestamptz
-	CreatedAt      pgtype.Timestamptz
+	InvitedBy      uuid.UUID
+	ExpiresAt      time.Time
+	AcceptedAt     *time.Time
+	RevokedAt      *time.Time
+	CreatedAt      time.Time
 }
 
 type OrganizationMember struct {
-	OrganizationID pgtype.UUID
-	UserID         pgtype.UUID
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
 	Role           OrganizationRole
-	InvitedBy      pgtype.UUID
-	JoinedAt       pgtype.Timestamptz
+	InvitedBy      uuid.NullUUID
+	JoinedAt       time.Time
 }
 
 type Payment struct {
-	ID               pgtype.UUID
-	OrganizationID   pgtype.UUID
-	InvoiceID        pgtype.UUID
-	OptionID         pgtype.UUID
-	AddressID        pgtype.UUID
+	ID               uuid.UUID
+	OrganizationID   uuid.UUID
+	InvoiceID        uuid.NullUUID
+	OptionID         uuid.NullUUID
+	AddressID        uuid.UUID
 	AssetID          int16
 	ProviderID       int16
-	TransferID       pgtype.UUID
+	TransferID       uuid.UUID
 	Amount           pgtype.Numeric
 	FeeAmount        pgtype.Numeric
 	FeeBpsApplied    pgtype.Int4
 	SpreadAmount     pgtype.Numeric
 	NetworkFeeAmount pgtype.Numeric
 	Status           PaymentStatus
-	DetectedAt       pgtype.Timestamptz
-	ConfirmedAt      pgtype.Timestamptz
-	CreditedAt       pgtype.Timestamptz
-	CreatedAt        pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
-	FeeScheduleID    pgtype.UUID
+	DetectedAt       time.Time
+	ConfirmedAt      *time.Time
+	CreditedAt       *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	FeeScheduleID    uuid.NullUUID
 }
 
 type PaymentProvider struct {
@@ -1488,16 +1490,16 @@ type PaymentProvider struct {
 	Kind           ProviderKind
 	Adapter        string
 	Config         []byte
-	CredentialsRef pgtype.Text
+	CredentialsRef *string
 	IsEnabled      bool
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type ProviderAsset struct {
 	ProviderID      int16
 	AssetID         int16
-	ExternalAssetID pgtype.Text
+	ExternalAssetID *string
 	IsEnabled       bool
 }
 
@@ -1515,215 +1517,215 @@ type ProviderNetwork struct {
 type ProviderWebhookEvent struct {
 	ID              int64
 	ProviderID      int16
-	ExternalEventID pgtype.Text
-	EventType       pgtype.Text
+	ExternalEventID *string
+	EventType       *string
 	Payload         []byte
 	SignatureValid  pgtype.Bool
-	ReceivedAt      pgtype.Timestamptz
-	ProcessedAt     pgtype.Timestamptz
-	Error           pgtype.Text
+	ReceivedAt      time.Time
+	ProcessedAt     *time.Time
+	Error           *string
 }
 
 type Session struct {
-	ID            pgtype.UUID
-	UserID        pgtype.UUID
+	ID            uuid.UUID
+	UserID        uuid.UUID
 	TokenHash     []byte
-	IdentityID    pgtype.UUID
-	MfaVerifiedAt pgtype.Timestamptz
+	IdentityID    uuid.NullUUID
+	MfaVerifiedAt *time.Time
 	IpAddress     *netip.Addr
-	UserAgent     pgtype.Text
-	CreatedAt     pgtype.Timestamptz
-	LastSeenAt    pgtype.Timestamptz
-	ExpiresAt     pgtype.Timestamptz
-	RevokedAt     pgtype.Timestamptz
+	UserAgent     *string
+	CreatedAt     time.Time
+	LastSeenAt    time.Time
+	ExpiresAt     time.Time
+	RevokedAt     *time.Time
 }
 
 type Transaction struct {
-	ID             pgtype.UUID
+	ID             uuid.UUID
 	NetworkID      int16
 	ProviderID     int16
 	Hash           string
 	BlockNumber    pgtype.Int8
-	BlockHash      pgtype.Text
-	BlockTimestamp pgtype.Timestamptz
-	FromAddress    pgtype.Text
-	ToAddress      pgtype.Text
+	BlockHash      *string
+	BlockTimestamp *time.Time
+	FromAddress    *string
+	ToAddress      *string
 	Status         TxStatus
 	Confirmations  int32
 	FeeNative      pgtype.Numeric
 	FeeDetails     []byte
-	ExternalTxID   pgtype.Text
+	ExternalTxID   *string
 	Raw            []byte
-	FirstSeenAt    pgtype.Timestamptz
-	ConfirmedAt    pgtype.Timestamptz
+	FirstSeenAt    time.Time
+	ConfirmedAt    *time.Time
 }
 
 type Transfer struct {
-	ID            pgtype.UUID
-	TransactionID pgtype.UUID
+	ID            uuid.UUID
+	TransactionID uuid.UUID
 	NetworkID     int16
 	AssetID       int16
 	LogIndex      int32
-	FromAddress   pgtype.Text
+	FromAddress   *string
 	ToAddress     string
-	ToMemo        pgtype.Text
+	ToMemo        *string
 	Amount        pgtype.Numeric
 	Direction     TransferDirection
-	AddressID     pgtype.UUID
-	CreatedAt     pgtype.Timestamptz
+	AddressID     uuid.NullUUID
+	CreatedAt     time.Time
 }
 
 type User struct {
-	ID              pgtype.UUID
+	ID              uuid.UUID
 	Email           string
-	PasswordHash    pgtype.Text
+	PasswordHash    *string
 	FullName        string
-	AvatarUrl       pgtype.Text
+	AvatarUrl       *string
 	Status          UserStatus
-	EmailVerifiedAt pgtype.Timestamptz
+	EmailVerifiedAt *time.Time
 	MfaRequired     bool
-	LastLoginAt     pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
+	LastLoginAt     *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type UserIdentity struct {
-	ID              pgtype.UUID
-	UserID          pgtype.UUID
+	ID              uuid.UUID
+	UserID          uuid.UUID
 	Provider        AuthProvider
 	ProviderUserID  string
-	ProviderEmail   pgtype.Text
+	ProviderEmail   *string
 	EmailVerified   bool
-	DisplayName     pgtype.Text
-	AvatarUrl       pgtype.Text
+	DisplayName     *string
+	AvatarUrl       *string
 	AccessTokenEnc  []byte
 	RefreshTokenEnc []byte
-	TokenExpiresAt  pgtype.Timestamptz
+	TokenExpiresAt  *time.Time
 	RawProfile      []byte
-	LastLoginAt     pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
+	LastLoginAt     *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type UserMfaMethod struct {
-	ID             pgtype.UUID
-	UserID         pgtype.UUID
+	ID             uuid.UUID
+	UserID         uuid.UUID
 	Type           MfaMethodType
 	Label          string
 	TotpSecretEnc  []byte
 	CredentialID   []byte
 	PublicKey      []byte
 	SignCount      pgtype.Int8
-	Aaguid         pgtype.UUID
+	Aaguid         uuid.NullUUID
 	Transports     []string
 	DestinationEnc []byte
 	IsPrimary      bool
-	VerifiedAt     pgtype.Timestamptz
-	LastUsedAt     pgtype.Timestamptz
-	CreatedAt      pgtype.Timestamptz
+	VerifiedAt     *time.Time
+	LastUsedAt     *time.Time
+	CreatedAt      time.Time
 }
 
 type UserMfaRecoveryCode struct {
-	ID        pgtype.UUID
-	UserID    pgtype.UUID
+	ID        uuid.UUID
+	UserID    uuid.UUID
 	CodeHash  []byte
-	UsedAt    pgtype.Timestamptz
-	CreatedAt pgtype.Timestamptz
+	UsedAt    *time.Time
+	CreatedAt time.Time
 }
 
 type UserTrustedDevice struct {
-	ID              pgtype.UUID
-	UserID          pgtype.UUID
+	ID              uuid.UUID
+	UserID          uuid.UUID
 	DeviceTokenHash []byte
-	Name            pgtype.Text
+	Name            *string
 	IpAddress       *netip.Addr
-	UserAgent       pgtype.Text
-	LastSeenAt      pgtype.Timestamptz
-	ExpiresAt       pgtype.Timestamptz
-	RevokedAt       pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
+	UserAgent       *string
+	LastSeenAt      time.Time
+	ExpiresAt       time.Time
+	RevokedAt       *time.Time
+	CreatedAt       time.Time
 }
 
 type Wallet struct {
-	ID               pgtype.UUID
+	ID               uuid.UUID
 	ProviderID       int16
 	NetworkID        int16
 	Kind             WalletKind
 	Name             string
-	KeyRef           pgtype.Text
-	Xpub             pgtype.Text
-	DerivationPath   pgtype.Text
+	KeyRef           *string
+	Xpub             *string
+	DerivationPath   *string
 	NextIndex        int64
-	ExternalWalletID pgtype.Text
+	ExternalWalletID *string
 	IsActive         bool
-	CreatedAt        pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type WebhookDelivery struct {
-	ID             pgtype.UUID
-	EndpointID     pgtype.UUID
-	EventID        pgtype.UUID
+	ID             uuid.UUID
+	EndpointID     uuid.UUID
+	EventID        uuid.UUID
 	Status         WebhookDeliveryStatus
 	Attempts       int32
 	MaxAttempts    int32
-	NextAttemptAt  pgtype.Timestamptz
-	LastAttemptAt  pgtype.Timestamptz
+	NextAttemptAt  time.Time
+	LastAttemptAt  *time.Time
 	LastStatusCode pgtype.Int2
-	LastError      pgtype.Text
-	DeliveredAt    pgtype.Timestamptz
-	CreatedAt      pgtype.Timestamptz
+	LastError      *string
+	DeliveredAt    *time.Time
+	CreatedAt      time.Time
 }
 
 type WebhookEndpoint struct {
-	ID             pgtype.UUID
-	OrganizationID pgtype.UUID
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
 	Url            string
 	SecretEnc      []byte
 	EventTypes     []string
-	Description    pgtype.Text
+	Description    *string
 	IsActive       bool
-	CreatedBy      pgtype.UUID
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
+	CreatedBy      uuid.NullUUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type Withdrawal struct {
-	ID                pgtype.UUID
-	OrganizationID    pgtype.UUID
-	ExternalID        pgtype.Text
+	ID                uuid.UUID
+	OrganizationID    uuid.UUID
+	ExternalID        *string
 	AssetID           int16
 	ProviderID        pgtype.Int2
 	ToAddress         string
-	ToMemo            pgtype.Text
+	ToMemo            *string
 	Amount            pgtype.Numeric
 	FeeAmount         pgtype.Numeric
 	FeeBpsApplied     pgtype.Int4
 	NetworkFeeNative  pgtype.Numeric
 	Status            WithdrawalStatus
-	FromAddressID     pgtype.UUID
-	TransactionID     pgtype.UUID
-	ExternalRef       pgtype.Text
-	RequestedBy       pgtype.UUID
-	RequestedByApiKey pgtype.UUID
-	ApprovedBy        pgtype.UUID
-	ApprovedAt        pgtype.Timestamptz
-	FailureReason     pgtype.Text
+	FromAddressID     uuid.NullUUID
+	TransactionID     uuid.NullUUID
+	ExternalRef       *string
+	RequestedBy       uuid.NullUUID
+	RequestedByApiKey uuid.NullUUID
+	ApprovedBy        uuid.NullUUID
+	ApprovedAt        *time.Time
+	FailureReason     *string
 	Metadata          []byte
-	CreatedAt         pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
-	CompletedAt       pgtype.Timestamptz
-	FeeScheduleID     pgtype.UUID
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	CompletedAt       *time.Time
+	FeeScheduleID     uuid.NullUUID
 }
 
 type WithdrawalAddress struct {
-	ID             pgtype.UUID
-	OrganizationID pgtype.UUID
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
 	NetworkID      int16
 	Address        string
-	Memo           pgtype.Text
+	Memo           *string
 	Label          string
 	IsWhitelisted  bool
-	CreatedBy      pgtype.UUID
-	CreatedAt      pgtype.Timestamptz
+	CreatedBy      uuid.NullUUID
+	CreatedAt      time.Time
 }

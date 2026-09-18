@@ -7,8 +7,6 @@ package store
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getAssetByCode = `-- name: GetAssetByCode :one
@@ -18,6 +16,60 @@ WHERE code = $1
 
 func (q *Queries) GetAssetByCode(ctx context.Context, code string) (Asset, error) {
 	row := q.db.QueryRow(ctx, getAssetByCode, code)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.NetworkID,
+		&i.Code,
+		&i.Symbol,
+		&i.Name,
+		&i.Kind,
+		&i.TokenStandard,
+		&i.ContractAddress,
+		&i.Decimals,
+		&i.IsStablecoin,
+		&i.LogoUrl,
+		&i.MinDeposit,
+		&i.MinWithdrawal,
+		&i.IsEnabled,
+	)
+	return i, err
+}
+
+const getAssetByID = `-- name: GetAssetByID :one
+SELECT id, network_id, code, symbol, name, kind, token_standard, contract_address, decimals, is_stablecoin, logo_url, min_deposit, min_withdrawal, is_enabled FROM assets
+WHERE id = $1
+`
+
+func (q *Queries) GetAssetByID(ctx context.Context, id int16) (Asset, error) {
+	row := q.db.QueryRow(ctx, getAssetByID, id)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.NetworkID,
+		&i.Code,
+		&i.Symbol,
+		&i.Name,
+		&i.Kind,
+		&i.TokenStandard,
+		&i.ContractAddress,
+		&i.Decimals,
+		&i.IsStablecoin,
+		&i.LogoUrl,
+		&i.MinDeposit,
+		&i.MinWithdrawal,
+		&i.IsEnabled,
+	)
+	return i, err
+}
+
+const getNativeAssetForNetwork = `-- name: GetNativeAssetForNetwork :one
+SELECT id, network_id, code, symbol, name, kind, token_standard, contract_address, decimals, is_stablecoin, logo_url, min_deposit, min_withdrawal, is_enabled FROM assets
+WHERE network_id = $1 AND kind = 'native'
+`
+
+func (q *Queries) GetNativeAssetForNetwork(ctx context.Context, networkID int16) (Asset, error) {
+	row := q.db.QueryRow(ctx, getNativeAssetForNetwork, networkID)
 	var i Asset
 	err := row.Scan(
 		&i.ID,
@@ -67,42 +119,143 @@ func (q *Queries) GetNetworkByCode(ctx context.Context, code string) (Network, e
 	return i, err
 }
 
-const listEnabledAssets = `-- name: ListEnabledAssets :many
-SELECT a.id, a.network_id, a.code, a.symbol, a.name, a.kind, a.token_standard, a.contract_address, a.decimals, a.is_stablecoin, a.logo_url, a.min_deposit, a.min_withdrawal, a.is_enabled, n.code AS network_code, n.name AS network_name
-FROM assets a
-JOIN networks n ON n.id = a.network_id
-WHERE a.is_enabled AND n.is_enabled
-ORDER BY n.code, a.code
+const getNetworkByID = `-- name: GetNetworkByID :one
+SELECT id, code, name, family, chain_id, native_symbol, native_decimals, required_confirmations, avg_block_time_ms, address_regex, tx_hash_regex, supports_memo, explorer_tx_url, explorer_address_url, is_testnet, is_enabled FROM networks
+WHERE id = $1
 `
 
-type ListEnabledAssetsRow struct {
-	ID              int16
-	NetworkID       int16
-	Code            string
-	Symbol          string
-	Name            string
-	Kind            AssetKind
-	TokenStandard   pgtype.Text
-	ContractAddress pgtype.Text
-	Decimals        int16
-	IsStablecoin    bool
-	LogoUrl         pgtype.Text
-	MinDeposit      pgtype.Numeric
-	MinWithdrawal   pgtype.Numeric
-	IsEnabled       bool
-	NetworkCode     string
-	NetworkName     string
+func (q *Queries) GetNetworkByID(ctx context.Context, id int16) (Network, error) {
+	row := q.db.QueryRow(ctx, getNetworkByID, id)
+	var i Network
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.Name,
+		&i.Family,
+		&i.ChainID,
+		&i.NativeSymbol,
+		&i.NativeDecimals,
+		&i.RequiredConfirmations,
+		&i.AvgBlockTimeMs,
+		&i.AddressRegex,
+		&i.TxHashRegex,
+		&i.SupportsMemo,
+		&i.ExplorerTxUrl,
+		&i.ExplorerAddressUrl,
+		&i.IsTestnet,
+		&i.IsEnabled,
+	)
+	return i, err
 }
 
-func (q *Queries) ListEnabledAssets(ctx context.Context) ([]ListEnabledAssetsRow, error) {
-	rows, err := q.db.Query(ctx, listEnabledAssets)
+const getProviderAsset = `-- name: GetProviderAsset :one
+SELECT provider_id, asset_id, external_asset_id, is_enabled FROM provider_assets
+WHERE provider_id = $1 AND asset_id = $2
+`
+
+type GetProviderAssetParams struct {
+	ProviderID int16
+	AssetID    int16
+}
+
+func (q *Queries) GetProviderAsset(ctx context.Context, arg GetProviderAssetParams) (ProviderAsset, error) {
+	row := q.db.QueryRow(ctx, getProviderAsset, arg.ProviderID, arg.AssetID)
+	var i ProviderAsset
+	err := row.Scan(
+		&i.ProviderID,
+		&i.AssetID,
+		&i.ExternalAssetID,
+		&i.IsEnabled,
+	)
+	return i, err
+}
+
+const getProviderByCode = `-- name: GetProviderByCode :one
+SELECT id, code, name, kind, adapter, config, credentials_ref, is_enabled, created_at, updated_at FROM payment_providers
+WHERE code = $1
+`
+
+func (q *Queries) GetProviderByCode(ctx context.Context, code string) (PaymentProvider, error) {
+	row := q.db.QueryRow(ctx, getProviderByCode, code)
+	var i PaymentProvider
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.Name,
+		&i.Kind,
+		&i.Adapter,
+		&i.Config,
+		&i.CredentialsRef,
+		&i.IsEnabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getProviderByID = `-- name: GetProviderByID :one
+SELECT id, code, name, kind, adapter, config, credentials_ref, is_enabled, created_at, updated_at FROM payment_providers
+WHERE id = $1
+`
+
+func (q *Queries) GetProviderByID(ctx context.Context, id int16) (PaymentProvider, error) {
+	row := q.db.QueryRow(ctx, getProviderByID, id)
+	var i PaymentProvider
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.Name,
+		&i.Kind,
+		&i.Adapter,
+		&i.Config,
+		&i.CredentialsRef,
+		&i.IsEnabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getProviderNetwork = `-- name: GetProviderNetwork :one
+SELECT provider_id, network_id, supports_deposits, supports_withdrawals, supports_address_generation, supports_fee_sponsorship, priority, is_enabled FROM provider_networks
+WHERE provider_id = $1 AND network_id = $2
+`
+
+type GetProviderNetworkParams struct {
+	ProviderID int16
+	NetworkID  int16
+}
+
+func (q *Queries) GetProviderNetwork(ctx context.Context, arg GetProviderNetworkParams) (ProviderNetwork, error) {
+	row := q.db.QueryRow(ctx, getProviderNetwork, arg.ProviderID, arg.NetworkID)
+	var i ProviderNetwork
+	err := row.Scan(
+		&i.ProviderID,
+		&i.NetworkID,
+		&i.SupportsDeposits,
+		&i.SupportsWithdrawals,
+		&i.SupportsAddressGeneration,
+		&i.SupportsFeeSponsorship,
+		&i.Priority,
+		&i.IsEnabled,
+	)
+	return i, err
+}
+
+const listAssets = `-- name: ListAssets :many
+SELECT id, network_id, code, symbol, name, kind, token_standard, contract_address, decimals, is_stablecoin, logo_url, min_deposit, min_withdrawal, is_enabled FROM assets
+ORDER BY network_id, code
+`
+
+func (q *Queries) ListAssets(ctx context.Context) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, listAssets)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListEnabledAssetsRow
+	items := []Asset{}
 	for rows.Next() {
-		var i ListEnabledAssetsRow
+		var i Asset
 		if err := rows.Scan(
 			&i.ID,
 			&i.NetworkID,
@@ -118,6 +271,55 @@ func (q *Queries) ListEnabledAssets(ctx context.Context) ([]ListEnabledAssetsRow
 			&i.MinDeposit,
 			&i.MinWithdrawal,
 			&i.IsEnabled,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEnabledAssets = `-- name: ListEnabledAssets :many
+SELECT a.id, a.network_id, a.code, a.symbol, a.name, a.kind, a.token_standard, a.contract_address, a.decimals, a.is_stablecoin, a.logo_url, a.min_deposit, a.min_withdrawal, a.is_enabled, n.code AS network_code, n.name AS network_name
+FROM assets a
+JOIN networks n ON n.id = a.network_id
+WHERE a.is_enabled AND n.is_enabled
+ORDER BY n.code, a.code
+`
+
+type ListEnabledAssetsRow struct {
+	Asset       Asset
+	NetworkCode string
+	NetworkName string
+}
+
+func (q *Queries) ListEnabledAssets(ctx context.Context) ([]ListEnabledAssetsRow, error) {
+	rows, err := q.db.Query(ctx, listEnabledAssets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListEnabledAssetsRow{}
+	for rows.Next() {
+		var i ListEnabledAssetsRow
+		if err := rows.Scan(
+			&i.Asset.ID,
+			&i.Asset.NetworkID,
+			&i.Asset.Code,
+			&i.Asset.Symbol,
+			&i.Asset.Name,
+			&i.Asset.Kind,
+			&i.Asset.TokenStandard,
+			&i.Asset.ContractAddress,
+			&i.Asset.Decimals,
+			&i.Asset.IsStablecoin,
+			&i.Asset.LogoUrl,
+			&i.Asset.MinDeposit,
+			&i.Asset.MinWithdrawal,
+			&i.Asset.IsEnabled,
 			&i.NetworkCode,
 			&i.NetworkName,
 		); err != nil {
@@ -132,20 +334,18 @@ func (q *Queries) ListEnabledAssets(ctx context.Context) ([]ListEnabledAssetsRow
 }
 
 const listEnabledNetworks = `-- name: ListEnabledNetworks :many
-
 SELECT id, code, name, family, chain_id, native_symbol, native_decimals, required_confirmations, avg_block_time_ms, address_regex, tx_hash_regex, supports_memo, explorer_tx_url, explorer_address_url, is_testnet, is_enabled FROM networks
 WHERE is_enabled
 ORDER BY code
 `
 
-// Reference data: networks and assets the platform supports.
 func (q *Queries) ListEnabledNetworks(ctx context.Context) ([]Network, error) {
 	rows, err := q.db.Query(ctx, listEnabledNetworks)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Network
+	items := []Network{}
 	for rows.Next() {
 		var i Network
 		if err := rows.Scan(
@@ -176,6 +376,140 @@ func (q *Queries) ListEnabledNetworks(ctx context.Context) ([]Network, error) {
 	return items, nil
 }
 
+const listEnabledProviders = `-- name: ListEnabledProviders :many
+SELECT id, code, name, kind, adapter, config, credentials_ref, is_enabled, created_at, updated_at FROM payment_providers
+WHERE is_enabled
+ORDER BY code
+`
+
+func (q *Queries) ListEnabledProviders(ctx context.Context) ([]PaymentProvider, error) {
+	rows, err := q.db.Query(ctx, listEnabledProviders)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PaymentProvider{}
+	for rows.Next() {
+		var i PaymentProvider
+		if err := rows.Scan(
+			&i.ID,
+			&i.Code,
+			&i.Name,
+			&i.Kind,
+			&i.Adapter,
+			&i.Config,
+			&i.CredentialsRef,
+			&i.IsEnabled,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNetworks = `-- name: ListNetworks :many
+
+SELECT id, code, name, family, chain_id, native_symbol, native_decimals, required_confirmations, avg_block_time_ms, address_regex, tx_hash_regex, supports_memo, explorer_tx_url, explorer_address_url, is_testnet, is_enabled FROM networks
+ORDER BY code
+`
+
+// Reference data: providers, networks and assets the platform supports.
+// Read-mostly; the app may only flip enable flags. Owned by internal/reference.
+func (q *Queries) ListNetworks(ctx context.Context) ([]Network, error) {
+	rows, err := q.db.Query(ctx, listNetworks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Network{}
+	for rows.Next() {
+		var i Network
+		if err := rows.Scan(
+			&i.ID,
+			&i.Code,
+			&i.Name,
+			&i.Family,
+			&i.ChainID,
+			&i.NativeSymbol,
+			&i.NativeDecimals,
+			&i.RequiredConfirmations,
+			&i.AvgBlockTimeMs,
+			&i.AddressRegex,
+			&i.TxHashRegex,
+			&i.SupportsMemo,
+			&i.ExplorerTxUrl,
+			&i.ExplorerAddressUrl,
+			&i.IsTestnet,
+			&i.IsEnabled,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProviderNetworks = `-- name: ListProviderNetworks :many
+SELECT pn.provider_id, pn.network_id, pn.supports_deposits, pn.supports_withdrawals, pn.supports_address_generation, pn.supports_fee_sponsorship, pn.priority, pn.is_enabled, p.id, p.code, p.name, p.kind, p.adapter, p.config, p.credentials_ref, p.is_enabled, p.created_at, p.updated_at
+FROM provider_networks pn
+JOIN payment_providers p ON p.id = pn.provider_id
+WHERE pn.network_id = $1 AND pn.is_enabled AND p.is_enabled
+ORDER BY pn.priority, p.code
+`
+
+type ListProviderNetworksRow struct {
+	ProviderNetwork ProviderNetwork
+	PaymentProvider PaymentProvider
+}
+
+func (q *Queries) ListProviderNetworks(ctx context.Context, networkID int16) ([]ListProviderNetworksRow, error) {
+	rows, err := q.db.Query(ctx, listProviderNetworks, networkID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProviderNetworksRow{}
+	for rows.Next() {
+		var i ListProviderNetworksRow
+		if err := rows.Scan(
+			&i.ProviderNetwork.ProviderID,
+			&i.ProviderNetwork.NetworkID,
+			&i.ProviderNetwork.SupportsDeposits,
+			&i.ProviderNetwork.SupportsWithdrawals,
+			&i.ProviderNetwork.SupportsAddressGeneration,
+			&i.ProviderNetwork.SupportsFeeSponsorship,
+			&i.ProviderNetwork.Priority,
+			&i.ProviderNetwork.IsEnabled,
+			&i.PaymentProvider.ID,
+			&i.PaymentProvider.Code,
+			&i.PaymentProvider.Name,
+			&i.PaymentProvider.Kind,
+			&i.PaymentProvider.Adapter,
+			&i.PaymentProvider.Config,
+			&i.PaymentProvider.CredentialsRef,
+			&i.PaymentProvider.IsEnabled,
+			&i.PaymentProvider.CreatedAt,
+			&i.PaymentProvider.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setAssetEnabled = `-- name: SetAssetEnabled :exec
 UPDATE assets SET is_enabled = $2
 WHERE id = $1
@@ -188,5 +522,35 @@ type SetAssetEnabledParams struct {
 
 func (q *Queries) SetAssetEnabled(ctx context.Context, arg SetAssetEnabledParams) error {
 	_, err := q.db.Exec(ctx, setAssetEnabled, arg.ID, arg.IsEnabled)
+	return err
+}
+
+const setNetworkEnabled = `-- name: SetNetworkEnabled :exec
+UPDATE networks SET is_enabled = $2
+WHERE id = $1
+`
+
+type SetNetworkEnabledParams struct {
+	ID        int16
+	IsEnabled bool
+}
+
+func (q *Queries) SetNetworkEnabled(ctx context.Context, arg SetNetworkEnabledParams) error {
+	_, err := q.db.Exec(ctx, setNetworkEnabled, arg.ID, arg.IsEnabled)
+	return err
+}
+
+const setProviderEnabled = `-- name: SetProviderEnabled :exec
+UPDATE payment_providers SET is_enabled = $2
+WHERE id = $1
+`
+
+type SetProviderEnabledParams struct {
+	ID        int16
+	IsEnabled bool
+}
+
+func (q *Queries) SetProviderEnabled(ctx context.Context, arg SetProviderEnabledParams) error {
+	_, err := q.db.Exec(ctx, setProviderEnabled, arg.ID, arg.IsEnabled)
 	return err
 }

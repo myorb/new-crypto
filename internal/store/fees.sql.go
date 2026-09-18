@@ -7,7 +7,9 @@ package store
 
 import (
 	"context"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -18,8 +20,8 @@ WHERE id = $2 AND effective_to IS NULL
 `
 
 type CloseFeeScheduleParams struct {
-	EffectiveTo pgtype.Timestamptz
-	ID          pgtype.UUID
+	EffectiveTo *time.Time
+	ID          uuid.UUID
 }
 
 // Ends an open schedule. Returns 0 rows if it was already closed.
@@ -49,7 +51,7 @@ RETURNING id, organization_id, asset_id, deposit_fee_bps, deposit_fee_fixed, dep
 `
 
 type CreateFeeScheduleParams struct {
-	OrganizationID     pgtype.UUID
+	OrganizationID     uuid.NullUUID
 	AssetID            pgtype.Int2
 	DepositFeeBps      int32
 	DepositFeeFixed    pgtype.Numeric
@@ -61,8 +63,8 @@ type CreateFeeScheduleParams struct {
 	WithdrawalFeeBps   int32
 	WithdrawalFeeFixed pgtype.Numeric
 	PassNetworkFee     bool
-	FixedFeeCurrency   pgtype.Text
-	EffectiveFrom      pgtype.Timestamptz
+	FixedFeeCurrency   *string
+	EffectiveFrom      time.Time
 }
 
 func (q *Queries) CreateFeeSchedule(ctx context.Context, arg CreateFeeScheduleParams) (FeeSchedule, error) {
@@ -112,13 +114,13 @@ ORDER BY effective_from DESC, created_at DESC
 `
 
 // All schedules of one scope, newest first. NULL organization = platform defaults.
-func (q *Queries) ListFeeSchedules(ctx context.Context, organizationID pgtype.UUID) ([]FeeSchedule, error) {
+func (q *Queries) ListFeeSchedules(ctx context.Context, organizationID uuid.NullUUID) ([]FeeSchedule, error) {
 	rows, err := q.db.Query(ctx, listFeeSchedules, organizationID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []FeeSchedule
+	items := []FeeSchedule{}
 	for rows.Next() {
 		var i FeeSchedule
 		if err := rows.Scan(
@@ -162,7 +164,7 @@ LIMIT 1
 `
 
 type ResolveFeeScheduleParams struct {
-	OrganizationID pgtype.UUID
+	OrganizationID uuid.NullUUID
 	AssetID        pgtype.Int2
 }
 
