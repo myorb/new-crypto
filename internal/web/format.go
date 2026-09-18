@@ -158,10 +158,12 @@ func shortAddr(a string) string {
 }
 
 // shortID renders a uuid as a display id with a prefix: "pay_3Kq9fT2m".
+// It keeps the tail: uuidv7 starts with a millisecond timestamp, so rows
+// created together share their first characters and would look identical.
 func shortID(prefix string, id fmt.Stringer) string {
 	s := strings.ReplaceAll(id.String(), "-", "")
 	if len(s) > 10 {
-		s = s[:10]
+		s = s[len(s)-10:]
 	}
 	return prefix + s
 }

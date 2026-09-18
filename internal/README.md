@@ -87,13 +87,18 @@ lock) → `Approve` by a different user → worker `Route` → provider broadcas
 - **Merchant REST API.** The dashboard reads through `internal/web`; the
   public API still has to be built on `org.AuthenticateAPIKey` +
   `audit.BeginIdempotent`.
-- **Dashboard writes.** Every dashboard page reads real data, but the forms
-  and dialogs in `blocks/` are still inert (`onsubmit="return false"`).
-  Creating a key, endpoint, link or payout from the UI needs POST handlers;
-  the services behind them already exist.
+- **Dashboard writes.** Customers and payment links post for real: add a
+  customer, block or unblock one, create a link, pause, resume or archive it
+  (`internal/web/action_*.go`, gated on the finance role and same-origin).
+  The dialogs on the account, API key, payout, settings, wallet and webhook
+  pages are still inert (`onsubmit="return false"`); the services behind them
+  already exist. Editing an existing customer or link has no form yet, and
+  the search and sort controls on every table are still decoration: only the
+  status filter reaches the database.
 - **Hosted checkout page.** Payment links resolve (`checkout.LinkBySlug`,
-  `OpenLink`) but nothing serves `/l/<slug>` yet: add the public route, count
-  the view with `RecordLinkView` and render the invoice it opens.
+  `OpenLink`) but nothing serves `/l/<slug>` yet, so the URLs the links page
+  shows and its "Open checkout" action lead nowhere: add the public route,
+  count the view with `RecordLinkView` and render the invoice it opens.
 
 ## Chain adapters
 

@@ -146,16 +146,15 @@ func (s *Server) overviewData(ctx context.Context, v *viewer) (dashboard.Data, e
 	rng := func(key, label string, n int) dashboard.Range {
 		cur, prev := windowVals(fiatByDay, 0, n), windowVals(fiatByDay, n, n)
 		ds := days(n)
-		curPts, prevPts := make([]chart.Point, n), make([]chart.Point, n)
+		data := make([]chart.Datum, n)
 		for i := range ds {
-			curPts[i] = chart.Point{Label: dayLabel(ds[i]), Value: cur[i]}
-			prevPts[i] = chart.Point{Label: dayLabel(ds[i]), Value: prev[i]}
+			data[i] = chart.Datum{"day": dayLabel(ds[i]), "current": cur[i], "previous": prev[i]}
 		}
 		ch, tr := change(sum(cur), sum(prev))
-		return dashboard.Range{Key: key, Label: label, Total: f.fiatStr(sum(cur)), Change: ch, Trend: tr, Series: []chart.Series{
-			{Name: "This period", Color: "var(--chart-1)", Points: curPts},
-			{Name: "Previous period", Color: "var(--muted-foreground)", Points: prevPts, Dashed: true, NoFill: true},
-		}}
+		return dashboard.Range{
+			Key: key, Label: label, Total: f.fiatStr(sum(cur)), Change: ch, Trend: tr,
+			Config: dashboard.VolumeConfig, Data: data,
+		}
 	}
 
 	byAsset, err := s.app.Payments.ByAsset(ctx, orgID, now.AddDate(0, 0, -30))
@@ -204,10 +203,15 @@ func (s *Server) overviewData(ctx context.Context, v *viewer) (dashboard.Data, e
 		}
 		perDay[k] = vals
 	}
-	statusByDay := make([]chart.Group, 0, 14)
+	statusByDay := make([]chart.Datum, 0, 14)
 	for _, d := range days(14) {
 		vals := perDay[dayKey(d)]
-		statusByDay = append(statusByDay, chart.Group{Label: dayLabel(d), Values: []float64{vals[0], vals[1], vals[2]}})
+		statusByDay = append(statusByDay, chart.Datum{
+			"day":       dayLabel(d),
+			"succeeded": vals[0],
+			"pending":   vals[1],
+			"failed":    vals[2],
+		})
 	}
 
 	balances, err := s.app.Ledger.MerchantBalances(ctx, orgID)

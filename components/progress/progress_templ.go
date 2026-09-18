@@ -271,7 +271,7 @@ func Track(props ...TrackProps) templ.Component {
 			p = props[0]
 		}
 		s := state(ctx)
-		var templ_7745c5c3_Var10 = []any{utils.CN("bg-muted h-3 rounded-full relative flex w-full items-center overflow-x-hidden", p.Class)}
+		var templ_7745c5c3_Var10 = []any{utils.CN("bg-muted h-1.5 rounded-full relative flex w-full items-center overflow-x-hidden", p.Class)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var10...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err

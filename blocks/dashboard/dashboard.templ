@@ -298,19 +298,30 @@ templ VolumeCard(ranges []Range) {
 								</span>
 							</div>
 							<div class="text-muted-foreground flex items-center gap-4 text-xs">
-								for _, s := range r.Series {
+								for _, s := range r.Config {
 									<span class="flex items-center gap-1.5">
-										if s.Dashed {
-											<span class="w-3 border-t border-dashed" style={ templ.SafeCSS("border-color:" + s.Color) }></span>
-										} else {
-											@chart.Swatch(s.Color)
-										}
-										{ s.Name }
+										@chart.Swatch(s.Color)
+										{ s.Label }
 									</span>
 								}
 							</div>
 						</div>
-						@chart.Area(chart.AreaProps{Series: r.Series, Height: "h-64", Format: money0})
+						@chart.Container(chart.ContainerProps{ID: "volume-" + r.Key, Config: r.Config, Class: "aspect-auto h-64 w-full"}) {
+							@chart.AreaChart(chart.AreaChartProps{Data: r.Data, AccessibilityLayer: true}) {
+								@chart.Defs() {
+									@chart.LinearGradient(chart.LinearGradientProps{ID: "fill-" + r.Key, X1: "0", Y1: "0", X2: "0", Y2: "1"}) {
+										<stop offset="5%" stop-color="var(--color-current)" stop-opacity="0.8"></stop>
+										<stop offset="95%" stop-color="var(--color-current)" stop-opacity="0.1"></stop>
+									}
+								}
+								@chart.CartesianGrid(chart.CartesianGridProps{Vertical: chart.Bool(false)})
+								@chart.XAxis(chart.XAxisProps{DataKey: "day", TickLine: false, AxisLine: false, TickMargin: 8, MinTickGap: 32})
+								@chart.YAxis(chart.YAxisProps{TickLine: false, AxisLine: false, TickMargin: 8, Width: 56, TickFormatter: axisMoney})
+								@chart.Tooltip(chart.TooltipProps{Content: chart.TooltipContentProps{Indicator: "dot"}})
+								@chart.Area(chart.AreaProps{DataKey: "previous", Type: chart.CurveNatural, Stroke: "var(--color-previous)", Fill: "none", FillOpacity: 1})
+								@chart.Area(chart.AreaProps{DataKey: "current", Type: chart.CurveNatural, Stroke: "var(--color-current)", Fill: "url(#fill-" + r.Key + ")", FillOpacity: 1})
+							}
+						}
 					}
 				}
 			}
@@ -320,6 +331,12 @@ templ VolumeCard(ranges []Range) {
 
 func money0(v float64) string {
 	return "$" + chart.Compact(v)
+}
+
+// axisMoney formats a y-axis tick, which arrives as the raw JSON value.
+func axisMoney(v any) string {
+	f, _ := v.(float64)
+	return money0(f)
 }
 
 templ AssetsCard(d Data) {
@@ -339,10 +356,30 @@ templ AssetsCard(d Data) {
 			}
 		}
 		@card.Content(card.ContentProps{Class: "flex flex-col gap-6"}) {
-			@chart.Donut(chart.DonutProps{Slices: assetSlices(d.Assets), Class: "mx-auto w-44", Thickness: 11}) {
-				<span class="text-muted-foreground text-xs">Total volume</span>
-				<span class="text-2xl font-semibold tracking-tight tabular-nums">{ money0(total) }</span>
-				<span class="text-muted-foreground text-xs">{ fmt.Sprintf("%d assets", len(d.Assets)) }</span>
+			@chart.Container(chart.ContainerProps{Config: assetConfig(d.Assets), Class: "mx-auto aspect-square w-44"}) {
+				@chart.PieChart() {
+					@chart.Tooltip(chart.TooltipProps{
+						Cursor:  chart.Bool(false),
+						Content: chart.TooltipContentProps{HideLabel: true, NameKey: "asset"},
+					})
+					@chart.Pie(chart.PieProps{
+						Data:        assetData(d.Assets),
+						DataKey:     "volume",
+						NameKey:     "asset",
+						InnerRadius: 66,
+						OuterRadius: 84,
+						Stroke:      "0",
+					}) {
+						@chart.Label(chart.LabelProps{
+							DominantBaseline: "middle",
+							Spans: []chart.LabelSpan{
+								{Text: "Total volume", Class: "fill-muted-foreground text-xs", OffsetY: -22},
+								{Text: money0(total), Class: "fill-foreground text-2xl font-semibold tabular-nums"},
+								{Text: fmt.Sprintf("%d assets", len(d.Assets)), Class: "fill-muted-foreground text-xs", OffsetY: 24},
+							},
+						})
+					}
+				}
 			}
 			<ul class="flex flex-col divide-y">
 				for _, a := range d.Assets {
@@ -359,10 +396,20 @@ templ AssetsCard(d Data) {
 	}
 }
 
-func assetSlices(assets []AssetShare) []chart.Slice {
-	out := make([]chart.Slice, len(assets))
+// assetData is one donut row per asset; "fill" colours the sector.
+func assetData(assets []AssetShare) []chart.Datum {
+	out := make([]chart.Datum, len(assets))
 	for i, a := range assets {
-		out[i] = chart.Slice{Label: a.Symbol, Value: a.Volume, Color: a.Color}
+		out[i] = chart.Datum{"asset": a.Symbol, "volume": a.Volume, "fill": a.Color}
+	}
+	return out
+}
+
+// assetConfig names the sectors for the tooltip.
+func assetConfig(assets []AssetShare) chart.Config {
+	out := make(chart.Config, len(assets))
+	for i, a := range assets {
+		out[i] = chart.Series{Key: a.Symbol, Label: a.Name, Color: a.Color}
 	}
 	return out
 }
@@ -416,13 +463,13 @@ templ statRow(label, value, hint string) {
 	</div>
 }
 
-var statusLegend = []chart.Legend{
-	{Name: "Succeeded", Color: "var(--chart-1)"},
-	{Name: "Pending", Color: "var(--chart-4)"},
-	{Name: "Failed", Color: "var(--destructive)"},
+var statusConfig = chart.Config{
+	{Key: "succeeded", Label: "Succeeded", Color: "var(--chart-1)"},
+	{Key: "pending", Label: "Pending", Color: "var(--chart-4)"},
+	{Key: "failed", Label: "Failed", Color: "var(--destructive)"},
 }
 
-templ StatusCard(groups []chart.Group) {
+templ StatusCard(data []chart.Datum) {
 	@card.Card(card.Props{Class: "h-full"}) {
 		@card.Header() {
 			@card.Title() {
@@ -433,13 +480,22 @@ templ StatusCard(groups []chart.Group) {
 			}
 		}
 		@card.Content(card.ContentProps{Class: "flex flex-1 flex-col justify-end gap-4"}) {
-			@chart.Bars(chart.BarsProps{Groups: groups, Series: statusLegend, Height: "h-44", XLabels: 4})
+			@chart.Container(chart.ContainerProps{Config: statusConfig, Class: "aspect-auto h-44 w-full"}) {
+				@chart.BarChart(chart.BarChartProps{Data: data, AccessibilityLayer: true}) {
+					@chart.CartesianGrid(chart.CartesianGridProps{Vertical: chart.Bool(false)})
+					@chart.XAxis(chart.XAxisProps{DataKey: "day", TickLine: false, AxisLine: false, TickMargin: 8, MinTickGap: 24})
+					@chart.Tooltip(chart.TooltipProps{Content: chart.TooltipContentProps{Indicator: "dot"}})
+					@chart.Bar(chart.BarProps{DataKey: "succeeded", StackID: "a", Fill: "var(--color-succeeded)"})
+					@chart.Bar(chart.BarProps{DataKey: "pending", StackID: "a", Fill: "var(--color-pending)"})
+					@chart.Bar(chart.BarProps{DataKey: "failed", StackID: "a", Fill: "var(--color-failed)", Radius: []float64{4, 4, 0, 0}})
+				}
+			}
 		}
 		@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-4 text-xs"}) {
-			for _, l := range statusLegend {
+			for _, l := range statusConfig {
 				<span class="flex items-center gap-1.5">
 					@chart.Swatch(l.Color)
-					{ l.Name }
+					{ l.Label }
 				</span>
 			}
 		}

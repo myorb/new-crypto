@@ -61,10 +61,30 @@ templ totalBalanceCard(d WalletsData) {
 			}
 		}
 		@card.Content(card.ContentProps{Class: "flex flex-col gap-6"}) {
-			@chart.Donut(chart.DonutProps{Slices: walletSlices(d.Wallets), Class: "mx-auto w-40", Thickness: 11}) {
-				<span class="text-muted-foreground text-xs">Assets</span>
-				<span class="text-2xl font-semibold tracking-tight tabular-nums">{ fmt.Sprint(len(d.Wallets)) }</span>
-				<span class="text-muted-foreground text-xs">across 5 networks</span>
+			@chart.Container(chart.ContainerProps{Config: walletConfig(d.Wallets), Class: "mx-auto aspect-square w-40"}) {
+				@chart.PieChart() {
+					@chart.Tooltip(chart.TooltipProps{
+						Cursor:  chart.Bool(false),
+						Content: chart.TooltipContentProps{HideLabel: true, NameKey: "asset"},
+					})
+					@chart.Pie(chart.PieProps{
+						Data:        walletData(d.Wallets),
+						DataKey:     "value",
+						NameKey:     "asset",
+						InnerRadius: 60,
+						OuterRadius: 76,
+						Stroke:      "0",
+					}) {
+						@chart.Label(chart.LabelProps{
+							DominantBaseline: "middle",
+							Spans: []chart.LabelSpan{
+								{Text: "Assets", Class: "fill-muted-foreground text-xs", OffsetY: -22},
+								{Text: fmt.Sprint(len(d.Wallets)), Class: "fill-foreground text-2xl font-semibold tabular-nums"},
+								{Text: "across 5 networks", Class: "fill-muted-foreground text-[10px]", OffsetY: 24},
+							},
+						})
+					}
+				}
 			}
 			<ul class="flex flex-col divide-y">
 				for _, w := range d.Wallets {
@@ -85,10 +105,20 @@ templ totalBalanceCard(d WalletsData) {
 	}
 }
 
-func walletSlices(ws []Wallet) []chart.Slice {
-	out := make([]chart.Slice, len(ws))
+// walletData is one donut row per wallet; "fill" colours the sector.
+func walletData(ws []Wallet) []chart.Datum {
+	out := make([]chart.Datum, len(ws))
 	for i, w := range ws {
-		out[i] = chart.Slice{Label: w.Symbol, Value: w.Value, Color: w.Chart}
+		out[i] = chart.Datum{"asset": w.Symbol, "value": w.Value, "fill": w.Chart}
+	}
+	return out
+}
+
+// walletConfig names the sectors for the tooltip.
+func walletConfig(ws []Wallet) chart.Config {
+	out := make(chart.Config, len(ws))
+	for i, w := range ws {
+		out[i] = chart.Series{Key: w.Symbol, Label: w.Name, Color: w.Chart}
 	}
 	return out
 }

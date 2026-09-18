@@ -1,0 +1,13 @@
+package pages
+
+import (
+	"templ-app/blocks/marketing"
+	"templ-app/layouts"
+)
+
+// Landing is the public home page served at "/".
+templ Landing() {
+	@layouts.Base("PayChain · Crypto payments, settled in dollars") {
+		@marketing.Landing()
+	}
+}

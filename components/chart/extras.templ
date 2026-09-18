@@ -1,0 +1,61 @@
+package chart
+
+import "templ-app/utils"
+
+// This file holds local additions that are not part of the shadcn chart
+// registry, so a `shadcn-templ add chart` re-sync (which rewrites
+// chart.templ and chart.js) leaves them alone. Both are built on the
+// registry primitives above.
+
+// SparklineProps configures an axis-free trend line for a card or a table
+// cell.
+type SparklineProps struct {
+	// Values are the plain y values; x is their position.
+	Values []float64
+	Class  string
+	// Color is any CSS color, "var(--chart-1)" when empty.
+	Color string
+}
+
+// Sparkline is a bare AreaChart: no axes, grid, tooltip or legend, just
+// the curve and its gradient. It fills the width and takes its height
+// from Class, e.g. "h-12".
+templ Sparkline(props ...SparklineProps) {
+	{{ var p SparklineProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	{{
+	color := p.Color
+	if color == "" {
+		color = "var(--chart-1)"
+	}
+	data := make([]Datum, len(p.Values))
+	for i, v := range p.Values {
+		data[i] = Datum{"i": i, "value": v}
+	}
+	id := utils.RandomID()
+	fill := "url(#spark-" + id + ")"
+	}}
+	@Container(ContainerProps{
+		ID:     id,
+		Config: Config{{Key: "value", Color: color}},
+		Class:  utils.CN("aspect-auto h-10 w-full", p.Class),
+		Attributes: templ.Attributes{"aria-hidden": "true"},
+	}) {
+		@AreaChart(AreaChartProps{Data: data, Margin: &Margin{}}) {
+			@Defs() {
+				@LinearGradient(LinearGradientProps{ID: "spark-" + id, X1: "0", Y1: "0", X2: "0", Y2: "1"}) {
+					<stop offset="0%" stop-color={ color } stop-opacity="0.3"></stop>
+					<stop offset="100%" stop-color={ color } stop-opacity="0"></stop>
+				}
+			}
+			@Area(AreaProps{DataKey: "value", Type: CurveNatural, Stroke: color, Fill: fill, FillOpacity: 1})
+		}
+	}
+}
+
+// Swatch is a small colour square for legends and lists next to a chart.
+templ Swatch(color string) {
+	<span class="size-2.5 shrink-0 rounded-xs" style={ templ.SafeCSS("background:" + color) } aria-hidden="true"></span>
+}

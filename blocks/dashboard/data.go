@@ -34,12 +34,22 @@ type KPI struct {
 
 // Range is one selectable period of the volume chart.
 type Range struct {
-	Key    string // tab value, e.g. "30d"
-	Label  string // tab label, e.g. "30 days"
-	Series []chart.Series
+	Key   string // tab value, e.g. "30d"
+	Label string // tab label, e.g. "30 days"
+	// Config names and colours the two series; Data holds one row per day
+	// with a "day" label and a value per series key.
+	Config chart.Config
+	Data   []chart.Datum
 	Total  string
 	Change string
 	Trend  Trend
+}
+
+// VolumeConfig is the series config of every volume range: the current
+// period against the one before it.
+var VolumeConfig = chart.Config{
+	{Key: "current", Label: "This period", Color: "var(--chart-1)"},
+	{Key: "previous", Label: "Previous period", Color: "var(--muted-foreground)"},
 }
 
 // AssetShare is one slice of the volume-by-asset donut.
@@ -147,7 +157,7 @@ type Data struct {
 	Ranges      []Range
 	Assets      []AssetShare
 	Networks    []NetworkShare
-	StatusByDay []chart.Group
+	StatusByDay []chart.Datum
 	Settlement  Settlement
 	Balances    []Balance
 	Payments    []Payment
@@ -277,21 +287,21 @@ func scale(v []float64, k float64) []float64 {
 
 // volumeRange builds the current and previous period series for one tab.
 func volumeRange(key, label string, today time.Time, daily []float64, days int, total, change string, trend Trend) Range {
-	current := make([]chart.Point, days)
-	previous := make([]chart.Point, days)
+	data := make([]chart.Datum, days)
 	n := len(daily)
 	for i := 0; i < days; i++ {
 		day := today.AddDate(0, 0, -(days - 1 - i))
-		current[i] = chart.Point{Label: day.Format("Jan 2"), Value: daily[n-days+i]}
-		previous[i] = chart.Point{Label: day.Format("Jan 2"), Value: daily[n-2*days+i]}
+		data[i] = chart.Datum{
+			"day":      day.Format("Jan 2"),
+			"current":  daily[n-days+i],
+			"previous": daily[n-2*days+i],
+		}
 	}
 	return Range{
-		Key:   key,
-		Label: label,
-		Series: []chart.Series{
-			{Name: "This period", Color: "var(--chart-1)", Points: current},
-			{Name: "Previous period", Color: "var(--muted-foreground)", Points: previous, Dashed: true, NoFill: true},
-		},
+		Key:    key,
+		Label:  label,
+		Config: VolumeConfig,
+		Data:   data,
 		Total:  total,
 		Change: change,
 		Trend:  trend,
@@ -299,9 +309,9 @@ func volumeRange(key, label string, today time.Time, daily []float64, days int, 
 }
 
 // statusByDay is succeeded/pending/failed counts per day.
-func statusByDay(today time.Time, days int, scale, failMul float64) []chart.Group {
+func statusByDay(today time.Time, days int, scale, failMul float64) []chart.Datum {
 	rng := rand.New(rand.NewSource(1709))
-	out := make([]chart.Group, days)
+	out := make([]chart.Datum, days)
 	for i := range out {
 		day := today.AddDate(0, 0, -(days - 1 - i))
 		base := (140.0 + 40*float64(i)/float64(days)) * scale
@@ -311,7 +321,12 @@ func statusByDay(today time.Time, days int, scale, failMul float64) []chart.Grou
 		ok := math.Round(base * (0.9 + rng.Float64()*0.2))
 		pending := math.Round((4 + rng.Float64()*9) * scale)
 		failed := math.Round((1 + rng.Float64()*4) * scale * failMul)
-		out[i] = chart.Group{Label: day.Format("Jan 2"), Values: []float64{ok, pending, failed}}
+		out[i] = chart.Datum{
+			"day":       day.Format("Jan 2"),
+			"succeeded": ok,
+			"pending":   pending,
+			"failed":    failed,
+		}
 	}
 	return out
 }

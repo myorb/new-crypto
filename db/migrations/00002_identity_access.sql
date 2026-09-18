@@ -4,6 +4,8 @@
 --  users, organizations, memberships, social login, sessions, 2FA, API keys,
 --  audit log, idempotency keys
 -- =============================================================================
+-- // TODO only magick link for now 
+-- only one owner per organization, 
 
 CREATE TABLE users (
     id                UUID          PRIMARY KEY DEFAULT uuidv7(),
@@ -20,7 +22,7 @@ CREATE TABLE users (
 );
 CREATE TRIGGER trg_users_updated BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 GRANT SELECT, INSERT, UPDATE ON users TO templ_app;          -- no DELETE: status = 'deleted' + anonymise
-
+-- TODO no legal enitty no slag instead of use short id 
 CREATE TABLE organizations (
     id                  UUID                PRIMARY KEY DEFAULT uuidv7(),
     slug                CITEXT              NOT NULL UNIQUE,
@@ -131,6 +133,7 @@ CREATE INDEX sessions_expires_idx ON sessions(expires_at);                -- pur
 GRANT SELECT, INSERT, UPDATE, DELETE ON sessions TO templ_app;
 
 -- ---- Two-factor authentication ----------------------------------------------
+-- TODO consider to use auth app form google
 CREATE TABLE user_mfa_methods (
     id               UUID            PRIMARY KEY DEFAULT uuidv7(),
     user_id          UUID            NOT NULL REFERENCES users(id) ON DELETE CASCADE,

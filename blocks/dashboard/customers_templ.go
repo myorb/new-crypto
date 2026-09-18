@@ -1188,7 +1188,7 @@ func countriesOf(d CustomersData) []option {
 	if len(list) == 0 {
 		list = countryOptions
 	}
-	return append([]option{{Value: "", Label: "Not set"}}, list...)
+	return append([]option{{Value: "none", Label: "Not set"}}, list...)
 }
 
 var countryOptions = []option{
@@ -1506,7 +1506,7 @@ func addCustomerDialog(d CustomersData) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = fieldSelect("country", countriesOf(d), "").Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = fieldSelect("country", countriesOf(d), "none").Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}

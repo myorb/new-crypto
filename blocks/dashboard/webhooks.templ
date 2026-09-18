@@ -16,9 +16,9 @@ import (
 	"templ-app/utils"
 )
 
-var deliveryLegend = []chart.Legend{
-	{Name: "Delivered", Color: "var(--chart-1)"},
-	{Name: "Failed", Color: "var(--destructive)"},
+var deliveryConfig = chart.Config{
+	{Key: "delivered", Label: "Delivered", Color: "var(--chart-1)"},
+	{Key: "failed", Label: "Failed", Color: "var(--destructive)"},
 }
 
 var deliveryTabs = []option{
@@ -138,7 +138,7 @@ templ endpointRowMenu(e Endpoint) {
 	}
 }
 
-templ deliveriesChartCard(groups []chart.Group) {
+templ deliveriesChartCard(data []chart.Datum) {
 	@card.Card() {
 		@card.Header() {
 			@card.Title() {
@@ -149,13 +149,21 @@ templ deliveriesChartCard(groups []chart.Group) {
 			}
 		}
 		@card.Content() {
-			@chart.Bars(chart.BarsProps{Groups: groups, Series: deliveryLegend, Height: "h-36", XLabels: 4})
+			@chart.Container(chart.ContainerProps{Config: deliveryConfig, Class: "aspect-auto h-36 w-full"}) {
+				@chart.BarChart(chart.BarChartProps{Data: data, AccessibilityLayer: true}) {
+					@chart.CartesianGrid(chart.CartesianGridProps{Vertical: chart.Bool(false)})
+					@chart.XAxis(chart.XAxisProps{DataKey: "day", TickLine: false, AxisLine: false, TickMargin: 8, MinTickGap: 24})
+					@chart.Tooltip(chart.TooltipProps{Content: chart.TooltipContentProps{Indicator: "dot"}})
+					@chart.Bar(chart.BarProps{DataKey: "delivered", StackID: "a", Fill: "var(--color-delivered)"})
+					@chart.Bar(chart.BarProps{DataKey: "failed", StackID: "a", Fill: "var(--color-failed)", Radius: []float64{4, 4, 0, 0}})
+				}
+			}
 		}
 		@card.Footer(card.FooterProps{Class: "text-muted-foreground gap-4 text-xs"}) {
-			for _, l := range deliveryLegend {
+			for _, l := range deliveryConfig {
 				<span class="flex items-center gap-1.5">
 					@chart.Swatch(l.Color)
-					{ l.Name }
+					{ l.Label }
 				</span>
 			}
 		}

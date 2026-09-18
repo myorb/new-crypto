@@ -210,6 +210,7 @@ type Summary struct {
 	Paid           int64
 	Volume         decimal.Decimal // paid invoices priced in the requested currency
 	LastActivityAt time.Time       // newest invoice, or the customer's creation
+	TopAsset       string          // symbol they pay with most, "" when they never paid
 }
 
 // List returns customers newest-activity first. currency selects which
@@ -223,7 +224,7 @@ func (s *Service) List(ctx context.Context, orgID uuid.UUID, status *store.Custo
 	}
 	out := make([]Summary, len(rows))
 	for i, r := range rows {
-		out[i] = Summary{Customer: r.Customer, Invoices: r.Invoices, Paid: r.Paid, Volume: money.FromNumeric(r.Volume), LastActivityAt: r.LastActivityAt}
+		out[i] = Summary{Customer: r.Customer, Invoices: r.Invoices, Paid: r.Paid, Volume: money.FromNumeric(r.Volume), LastActivityAt: r.LastActivityAt, TopAsset: r.TopAsset}
 	}
 	return out, nil
 }

@@ -43,7 +43,7 @@ type WebhooksData struct {
 	Endpoints  []Endpoint
 	Deliveries []Delivery
 	Total      int
-	ByDay      []chart.Group
+	ByDay      []chart.Datum
 	Secret     string
 	EventTypes []string
 }
@@ -106,8 +106,8 @@ func WebhooksFixture(sandbox bool) WebhooksData {
 	return d
 }
 
-func webhookByDay(days int, scale float64) []chart.Group {
-	out := make([]chart.Group, days)
+func webhookByDay(days int, scale float64) []chart.Datum {
+	out := make([]chart.Datum, days)
 	for i := range out {
 		day := today.AddDate(0, 0, -(days - 1 - i))
 		base := (1500.0 + 40*float64(i)) * scale
@@ -118,7 +118,11 @@ func webhookByDay(days int, scale float64) []chart.Group {
 		if i == days-2 || i == days-1 {
 			failed = base * 0.09
 		}
-		out[i] = chart.Group{Label: day.Format("Jan 2"), Values: []float64{float64(int(base - failed)), float64(int(failed))}}
+		out[i] = chart.Datum{
+			"day":       day.Format("Jan 2"),
+			"delivered": float64(int(base - failed)),
+			"failed":    float64(int(failed)),
+		}
 	}
 	return out
 }

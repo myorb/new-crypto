@@ -188,7 +188,7 @@ func countriesOf(d CustomersData) []option {
 	if len(list) == 0 {
 		list = countryOptions
 	}
-	return append([]option{{Value: "", Label: "Not set"}}, list...)
+	return append([]option{{Value: "none", Label: "Not set"}}, list...)
 }
 
 var countryOptions = []option{
@@ -236,7 +236,7 @@ templ addCustomerDialog(d CustomersData) {
 					@field.Label(field.LabelProps{For: "cus-country"}) {
 						Country
 					}
-					@fieldSelect("country", countriesOf(d), "")
+					@fieldSelect("country", countriesOf(d), "none")
 				}
 				@field.Field() {
 					@field.Label(field.LabelProps{For: "cus-ref"}) {

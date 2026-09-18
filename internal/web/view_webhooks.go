@@ -101,10 +101,14 @@ func (s *Server) webhooksPage(w http.ResponseWriter, r *http.Request, v *viewer)
 		}
 		perDay[k] = vals
 	}
-	groups := make([]chart.Group, 0, 14)
+	groups := make([]chart.Datum, 0, 14)
 	for _, d := range days(14) {
 		vals := perDay[dayKey(d)]
-		groups = append(groups, chart.Group{Label: dayLabel(d), Values: []float64{vals[0], vals[1]}})
+		groups = append(groups, chart.Datum{
+			"day":       dayLabel(d),
+			"delivered": vals[0],
+			"failed":    vals[1],
+		})
 	}
 
 	d := dashboard.WebhooksData{

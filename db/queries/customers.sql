@@ -50,7 +50,16 @@ SELECT sqlc.embed(c),
        count(i.id)                                                                   AS invoices,
        count(i.id) FILTER (WHERE i.status IN ('confirmed', 'completed'))             AS paid,
        COALESCE(sum(i.price_amount) FILTER (WHERE i.status IN ('confirmed', 'completed') AND i.price_currency = sqlc.arg('currency')), 0)::numeric AS volume,
-       COALESCE(max(i.created_at), c.created_at)::timestamptz                        AS last_activity_at
+       COALESCE(max(i.created_at), c.created_at)::timestamptz                        AS last_activity_at,
+       -- the asset this payer reaches for most often, '' when they never paid
+       COALESCE((SELECT a.symbol
+          FROM payments p
+          JOIN invoices pi ON pi.id = p.invoice_id
+          JOIN assets a    ON a.id = p.asset_id
+         WHERE pi.customer_id = c.id
+         GROUP BY a.symbol
+         ORDER BY count(*) DESC, a.symbol
+         LIMIT 1), '')::text                                                         AS top_asset
 FROM customers c
 LEFT JOIN invoices i ON i.customer_id = c.id
 WHERE c.organization_id = $1

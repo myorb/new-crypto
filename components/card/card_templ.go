@@ -89,7 +89,7 @@ func Card(props ...Props) templ.Component {
 		if p.Size == "" {
 			p.Size = SizeDefault
 		}
-		var templ_7745c5c3_Var2 = []any{utils.CN("bg-card text-card-foreground ring-foreground/5 dark:ring-foreground/10 gap-(--card-spacing) overflow-hidden rounded-4xl py-(--card-spacing) text-sm shadow-md ring-1 [--card-spacing:--spacing(6)] has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(4)] *:[img:first-child]:rounded-t-4xl *:[img:last-child]:rounded-b-4xl group/card flex flex-col", p.Class)}
+		var templ_7745c5c3_Var2 = []any{utils.CN("ring-foreground/10 bg-card text-card-foreground gap-(--card-spacing) overflow-hidden rounded-xl py-(--card-spacing) text-sm shadow-xs ring-1 [--card-spacing:--spacing(6)] has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(4)] *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl group/card flex flex-col", p.Class)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var2...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -193,7 +193,7 @@ func Header(props ...HeaderProps) templ.Component {
 			p = props[0]
 		}
 		var templ_7745c5c3_Var7 = []any{utils.CN(
-			"gap-1.5 rounded-t-4xl px-(--card-spacing) [.border-b]:pb-(--card-spacing) group/card-header @container/card-header grid auto-rows-min items-start has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto]",
+			"gap-1 rounded-t-xl px-(--card-spacing) [.border-b]:pb-(--card-spacing) group/card-header @container/card-header grid auto-rows-min items-start has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto]",
 			p.Class,
 		),
 		}
@@ -286,7 +286,7 @@ func Title(props ...TitleProps) templ.Component {
 		if len(props) > 0 {
 			p = props[0]
 		}
-		var templ_7745c5c3_Var11 = []any{utils.CN("text-base font-medium", p.Class)}
+		var templ_7745c5c3_Var11 = []any{utils.CN("text-base leading-normal font-medium group-data-[size=sm]/card:text-sm font-heading", p.Class)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var11...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -651,7 +651,7 @@ func Footer(props ...FooterProps) templ.Component {
 		if len(props) > 0 {
 			p = props[0]
 		}
-		var templ_7745c5c3_Var27 = []any{utils.CN("rounded-b-4xl px-(--card-spacing) [.border-t]:pt-(--card-spacing) flex items-center", p.Class)}
+		var templ_7745c5c3_Var27 = []any{utils.CN("rounded-b-xl px-(--card-spacing) [.border-t]:pt-(--card-spacing) flex items-center", p.Class)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var27...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err

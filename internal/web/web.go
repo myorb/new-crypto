@@ -49,7 +49,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.assets(mux)
 	mux.HandleFunc("GET /healthz", s.health)
-	mux.Handle("GET /", templ.Handler(pages.Home()))
+	mux.Handle("GET /", templ.Handler(pages.Landing()))
+	// The component gallery that used to sit at "/" before the landing page.
+	mux.Handle("GET /preview", templ.Handler(pages.Home()))
 	mux.HandleFunc("GET /mode", setMode)
 
 	if s.app == nil {

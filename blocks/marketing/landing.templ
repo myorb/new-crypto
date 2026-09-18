@@ -1,0 +1,193 @@
+package marketing
+
+import (
+	"fmt"
+
+	"templ-app/components/badge"
+	"templ-app/components/button"
+	"templ-app/components/card"
+	"templ-app/components/icon"
+	"templ-app/components/themetoggle"
+)
+
+// Landing is the public home page: hero, product grid, the three setup
+// steps and a closing call to action. All of its copy comes from
+// landing_data.go.
+templ Landing() {
+	<div class="flex min-h-svh flex-col">
+		@siteHeader()
+		<main class="flex-1">
+			@hero()
+			@featureGrid()
+			@howItWorks()
+			@closingCTA()
+		</main>
+		@siteFooter()
+	</div>
+}
+
+templ siteHeader() {
+	<header class="bg-background/80 sticky top-0 z-50 border-b backdrop-blur">
+		<div class="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+			@wordmark()
+			<nav class="text-muted-foreground hidden items-center gap-6 text-sm md:flex">
+				<a href="#product" class="hover:text-foreground transition-colors">Product</a>
+				<a href="#how-it-works" class="hover:text-foreground transition-colors">How it works</a>
+				<a href="/dashboard" class="hover:text-foreground transition-colors">Dashboard</a>
+			</nav>
+			<div class="flex items-center gap-2">
+				@themetoggle.ModeToggle()
+				@button.Button(button.Props{Href: "/login", Variant: button.VariantGhost, Size: button.SizeSm, Class: "hidden sm:inline-flex"}) {
+					Sign in
+				}
+				@button.Button(button.Props{Href: "/signup", Size: button.SizeSm}) {
+					Get started
+				}
+			</div>
+		</div>
+	</header>
+}
+
+templ hero() {
+	<section class="relative overflow-hidden border-b">
+		<div class="pointer-events-none absolute inset-0" aria-hidden="true">
+			<div class="bg-primary/15 absolute -top-40 left-1/4 size-[32rem] -translate-x-1/2 rounded-full blur-3xl"></div>
+			<div class="bg-chart-2/10 absolute -right-32 -bottom-40 size-[30rem] rounded-full blur-3xl"></div>
+		</div>
+		<div class="relative mx-auto flex w-full max-w-6xl flex-col items-center gap-8 px-4 py-20 text-center sm:px-6 sm:py-28">
+			@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: "h-auto gap-1.5 px-3 py-1"}) {
+				@icon.Zap(icon.Props{Class: "text-primary"})
+				Now settling on five networks
+			}
+			<div class="flex max-w-3xl flex-col gap-5">
+				<h1 class="text-4xl font-semibold tracking-tight text-balance sm:text-6xl">
+					Accept crypto. Settle in dollars.
+				</h1>
+				<p class="text-muted-foreground mx-auto max-w-xl text-base text-pretty sm:text-lg">
+					PayChain gives you payments, payouts, wallets and the developer tools
+					behind them in one dashboard — so your finance team stops chasing
+					CSVs and your engineers ship in an afternoon.
+				</p>
+			</div>
+			<div class="flex flex-col items-center gap-3 sm:flex-row">
+				@button.Button(button.Props{Href: "/signup", Size: button.SizeLg}) {
+					Start for free
+					@icon.ArrowRight(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-end"}})
+				}
+				@button.Button(button.Props{Href: "/dashboard", Variant: button.VariantOutline, Size: button.SizeLg}) {
+					See the dashboard
+				}
+			</div>
+			<p class="text-muted-foreground flex max-w-xs items-start justify-center gap-2 text-xs sm:max-w-none">
+				@icon.ShieldCheck(icon.Props{Class: "mt-0.5 size-3.5 shrink-0 text-emerald-500"})
+				<span>SOC 2 Type II · PCI DSS · MPC custody · no setup fee</span>
+			</p>
+			<dl class="ring-foreground/5 bg-card/60 mt-4 grid w-full grid-cols-2 gap-6 rounded-2xl p-6 shadow-sm ring-1 backdrop-blur sm:grid-cols-4">
+				for _, s := range stats {
+					<div class="flex flex-col gap-1">
+						<dt class="text-2xl font-semibold tracking-tight tabular-nums">{ s.Value }</dt>
+						<dd class="text-muted-foreground text-xs">{ s.Label }</dd>
+					</div>
+				}
+			</dl>
+		</div>
+	</section>
+}
+
+templ featureGrid() {
+	<section id="product" class="border-b">
+		<div class="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-20 sm:px-6">
+			@sectionHead("Everything the money touches", "One account for the full lifecycle of a payment: take it, hold it, convert it, pay it out, and explain it afterwards.")
+			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+				for _, f := range features {
+					@featureCard(f)
+				}
+			</div>
+		</div>
+	</section>
+}
+
+templ featureCard(f Feature) {
+	@card.Card(card.Props{Class: "h-full gap-3 transition-shadow hover:shadow-md"}) {
+		@card.Header() {
+			<span class="bg-primary/10 text-primary flex size-9 items-center justify-center rounded-lg">
+				@f.Icon(icon.Props{Class: "size-4.5"})
+			</span>
+			@card.Title(card.TitleProps{Class: "mt-3"}) {
+				{ f.Title }
+			}
+			@card.Description() {
+				{ f.Body }
+			}
+		}
+	}
+}
+
+templ howItWorks() {
+	<section id="how-it-works" class="border-b">
+		<div class="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-20 sm:px-6">
+			@sectionHead("Live in three steps", "Most merchants take their first sandbox payment on the same day they sign up.")
+			<ol class="grid gap-4 md:grid-cols-3">
+				for i, s := range steps {
+					<li class="bg-card flex flex-col gap-3 rounded-xl border p-6">
+						<span class="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-full text-sm font-semibold tabular-nums">
+							{ fmt.Sprint(i + 1) }
+						</span>
+						<h3 class="font-semibold tracking-tight">{ s.Title }</h3>
+						<p class="text-muted-foreground text-sm">{ s.Body }</p>
+					</li>
+				}
+			</ol>
+		</div>
+	</section>
+}
+
+templ closingCTA() {
+	<section class="mx-auto w-full max-w-6xl px-4 py-20 sm:px-6">
+		<div class="bg-sidebar text-sidebar-foreground relative flex flex-col items-center gap-6 overflow-hidden rounded-3xl border p-10 text-center sm:p-16">
+			<div class="pointer-events-none absolute inset-0" aria-hidden="true">
+				<div class="bg-primary/20 absolute -top-24 -left-24 size-80 rounded-full blur-3xl"></div>
+			</div>
+			<div class="relative flex max-w-xl flex-col gap-3">
+				<h2 class="text-3xl font-semibold tracking-tight text-balance">Ready to take your first payment?</h2>
+				<p class="text-muted-foreground text-sm">Create an account, explore the sandbox, and go live when the numbers look right.</p>
+			</div>
+			@button.Button(button.Props{Href: "/signup", Size: button.SizeLg, Class: "relative"}) {
+				Create your account
+				@icon.ArrowRight(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-end"}})
+			}
+		</div>
+	</section>
+}
+
+templ sectionHead(title, description string) {
+	<div class="flex max-w-2xl flex-col gap-3">
+		<h2 class="text-3xl font-semibold tracking-tight text-balance">{ title }</h2>
+		<p class="text-muted-foreground text-pretty">{ description }</p>
+	</div>
+}
+
+templ wordmark() {
+	<a href="/" class="flex items-center gap-2">
+		<span class="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-lg">
+			@icon.Bitcoin(icon.Props{Class: "size-4"})
+		</span>
+		<span class="font-semibold">PayChain</span>
+	</a>
+}
+
+templ siteFooter() {
+	<footer class="border-t">
+		<div class="text-muted-foreground mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-xs sm:flex-row sm:px-6">
+			@wordmark()
+			<nav class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+				<a href="#product" class="hover:text-foreground">Product</a>
+				<a href="/login" class="hover:text-foreground">Sign in</a>
+				<a href="#" class="hover:text-foreground">Terms</a>
+				<a href="#" class="hover:text-foreground">Privacy</a>
+				<a href="#" class="hover:text-foreground">Status</a>
+			</nav>
+			<span>© 2026 PayChain</span>
+		</div>
+	</footer>
+}

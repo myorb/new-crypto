@@ -123,7 +123,7 @@ templ Track(props ...TrackProps) {
 		}
 		data-slot="progress-track"
 		data-tui-progress-part
-		class={ utils.CN("bg-muted h-3 rounded-full relative flex w-full items-center overflow-x-hidden", p.Class) }
+		class={ utils.CN("bg-muted h-1.5 rounded-full relative flex w-full items-center overflow-x-hidden", p.Class) }
 		{ statusAttr(s.value, s.max)... }
 		{ p.Attributes... }
 	>

@@ -309,7 +309,16 @@ SELECT c.id, c.organization_id, c.external_id, c.email, c.name, c.country_code, 
        count(i.id)                                                                   AS invoices,
        count(i.id) FILTER (WHERE i.status IN ('confirmed', 'completed'))             AS paid,
        COALESCE(sum(i.price_amount) FILTER (WHERE i.status IN ('confirmed', 'completed') AND i.price_currency = $4), 0)::numeric AS volume,
-       COALESCE(max(i.created_at), c.created_at)::timestamptz                        AS last_activity_at
+       COALESCE(max(i.created_at), c.created_at)::timestamptz                        AS last_activity_at,
+       -- the asset this payer reaches for most often, '' when they never paid
+       COALESCE((SELECT a.symbol
+          FROM payments p
+          JOIN invoices pi ON pi.id = p.invoice_id
+          JOIN assets a    ON a.id = p.asset_id
+         WHERE pi.customer_id = c.id
+         GROUP BY a.symbol
+         ORDER BY count(*) DESC, a.symbol
+         LIMIT 1), '')::text                                                         AS top_asset
 FROM customers c
 LEFT JOIN invoices i ON i.customer_id = c.id
 WHERE c.organization_id = $1
@@ -333,6 +342,7 @@ type ListCustomersRow struct {
 	Paid           int64
 	Volume         pgtype.Numeric
 	LastActivityAt time.Time
+	TopAsset       string
 }
 
 // Dashboard list: one row per customer with activity summed from their
@@ -369,6 +379,7 @@ func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([
 			&i.Paid,
 			&i.Volume,
 			&i.LastActivityAt,
+			&i.TopAsset,
 		); err != nil {
 			return nil, err
 		}

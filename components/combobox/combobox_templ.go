@@ -758,7 +758,7 @@ func Content(props ...ContentProps) templ.Component {
 			// (animations key on Base UI's data-open/data-closed attributes).
 			// The --available-height/--available-width/--anchor-width/
 			// --transform-origin variables become our JS variable names.
-			"text-popover-foreground data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/5 dark:ring-foreground/10 *:data-[slot=input-group]:bg-input/50 *:data-[slot=input-group]:border-input/30 overflow-hidden rounded-3xl shadow-lg ring-1 duration-100 *:data-[slot=input-group]:m-1.5 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-8 *:data-[slot=input-group]:shadow-none data-[side=inline-start]:slide-in-from-right-2 data-[side=inline-end]:slide-in-from-left-2 dark group/combobox-content max-h-(--tui-combobox-available-height) w-(--tui-combobox-anchor-width) max-w-(--tui-combobox-available-width) min-w-[calc(var(--tui-combobox-anchor-width)+--spacing(7))] origin-(--tui-combobox-transform-origin) data-[chips=true]:min-w-(--tui-combobox-anchor-width) animate-none! relative bg-popover/70 before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:rounded-[inherit] before:backdrop-blur-2xl before:backdrop-saturate-150 **:data-[slot$=-item]:focus:bg-foreground/10 **:data-[slot$=-item]:data-highlighted:bg-foreground/10 **:data-[slot$=-separator]:bg-foreground/5 **:data-[slot$=-trigger]:focus:bg-foreground/10 **:data-[slot$=-trigger]:aria-expanded:bg-foreground/10! **:data-[variant=destructive]:focus:bg-foreground/10! **:data-[variant=destructive]:text-accent-foreground! **:data-[variant=destructive]:**:text-accent-foreground!",
+			"bg-popover text-popover-foreground data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/10 *:data-[slot=input-group]:bg-input/30 *:data-[slot=input-group]:border-input/30 overflow-hidden rounded-md shadow-md ring-1 duration-100 *:data-[slot=input-group]:m-1 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-8 *:data-[slot=input-group]:shadow-none data-[side=inline-start]:slide-in-from-right-2 data-[side=inline-end]:slide-in-from-left-2 group/combobox-content relative max-h-(--tui-combobox-available-height) w-(--tui-combobox-anchor-width) max-w-(--tui-combobox-available-width) min-w-[calc(var(--tui-combobox-anchor-width)+--spacing(7))] origin-(--tui-combobox-transform-origin) data-[chips=true]:min-w-(--tui-combobox-anchor-width)",
 			// JS wiring: the positioner wrapper is pointer-events-none, the popup
 			// stays mounted after animate-out until hidePopover runs, and the
 			// vendored reads --available-height, which we bridge
@@ -856,7 +856,7 @@ func List(props ...ListProps) templ.Component {
 		if len(props) > 0 {
 			p = props[0]
 		}
-		var templ_7745c5c3_Var26 = []any{utils.CN("no-scrollbar max-h-[min(calc(--spacing(72)---spacing(9)),calc(var(--available-height)---spacing(9)))] scroll-py-1.5 p-1.5 data-empty:p-0 overflow-y-auto overscroll-contain", p.Class)}
+		var templ_7745c5c3_Var26 = []any{utils.CN("no-scrollbar max-h-[min(calc(--spacing(72)---spacing(9)),calc(var(--available-height)---spacing(9)))] scroll-py-1 p-1 data-empty:p-0 overflow-y-auto overscroll-contain", p.Class)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var26...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -1126,7 +1126,7 @@ func Label(props ...LabelProps) templ.Component {
 		if len(props) > 0 {
 			p = props[0]
 		}
-		var templ_7745c5c3_Var38 = []any{utils.CN("text-muted-foreground px-3 py-2.5 text-xs", p.Class)}
+		var templ_7745c5c3_Var38 = []any{utils.CN("text-muted-foreground px-2 py-1.5 text-xs", p.Class)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var38...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -1232,7 +1232,7 @@ func Item(props ...ItemProps) templ.Component {
 			// 1:1 base/ui/combobox.tsx ComboboxItem, the look comes from
 			// (the highlight keys on the data-highlighted
 			// attribute our JS sets).
-			"data-highlighted:bg-accent data-highlighted:text-accent-foreground not-data-[variant=destructive]:data-highlighted:**:text-accent-foreground gap-2.5 rounded-2xl py-2 pr-8 pl-3 text-sm font-medium [&_svg:not([class*='size-'])]:size-4 relative flex w-full cursor-default items-center outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+			"data-highlighted:bg-accent data-highlighted:text-accent-foreground not-data-[variant=destructive]:data-highlighted:**:text-accent-foreground gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm [&_svg:not([class*='size-'])]:size-4 relative flex w-full cursor-default items-center outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
 			// Native wiring: Base UI unmounts the indicator when unselected, our
 			// indicator toggles on the selected state via the group instead.
 			"group/combobox-item",
@@ -1389,7 +1389,7 @@ func Separator(props ...SeparatorProps) templ.Component {
 		if len(props) > 0 {
 			p = props[0]
 		}
-		var templ_7745c5c3_Var48 = []any{utils.CN("bg-border -mx-1.5 my-1.5 h-px", p.Class)}
+		var templ_7745c5c3_Var48 = []any{utils.CN("bg-border -mx-1 my-1 h-px", p.Class)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var48...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -1474,7 +1474,7 @@ func Chips(props ...ChipsProps) templ.Component {
 			p = props[0]
 		}
 		s := state(ctx)
-		var templ_7745c5c3_Var52 = []any{utils.CN("bg-input/50 border-transparent focus-within:border-ring focus-within:ring-ring/30 has-aria-invalid:ring-destructive/20 dark:has-aria-invalid:ring-destructive/40 has-aria-invalid:border-destructive dark:has-aria-invalid:border-destructive/50 flex min-h-9 flex-wrap items-center gap-1.5 rounded-3xl border bg-clip-padding px-3 py-1.5 text-sm transition-[color,box-shadow,background-color] focus-within:ring-3 has-aria-invalid:ring-3 has-data-[slot=combobox-chip]:px-1.5", p.Class)}
+		var templ_7745c5c3_Var52 = []any{utils.CN("dark:bg-input/30 border-input focus-within:border-ring focus-within:ring-ring/50 has-aria-invalid:ring-destructive/20 dark:has-aria-invalid:ring-destructive/40 has-aria-invalid:border-destructive dark:has-aria-invalid:border-destructive/50 flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border bg-transparent bg-clip-padding px-2.5 py-1.5 text-sm shadow-xs transition-[color,box-shadow] focus-within:ring-3 has-aria-invalid:ring-3 has-data-[slot=combobox-chip]:px-1.5", p.Class)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var52...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -1781,7 +1781,7 @@ func Chip(props ...ChipProps) templ.Component {
 			p = props[0]
 		}
 		var templ_7745c5c3_Var66 = []any{utils.CN(
-			"bg-input text-foreground flex h-[calc(--spacing(5.5))] w-fit items-center justify-center gap-1 rounded-3xl px-2 text-xs font-medium whitespace-nowrap has-data-[slot=combobox-chip-remove]:pr-0 dark:bg-input/60 has-disabled:pointer-events-none has-disabled:cursor-not-allowed has-disabled:opacity-50",
+			"bg-muted text-foreground flex h-[calc(--spacing(5.5))] w-fit items-center justify-center gap-1 rounded-sm px-1.5 text-xs font-medium whitespace-nowrap has-data-[slot=combobox-chip-remove]:pr-0 has-disabled:pointer-events-none has-disabled:cursor-not-allowed has-disabled:opacity-50",
 			p.Class,
 		),
 		}

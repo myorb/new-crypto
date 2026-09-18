@@ -44,10 +44,14 @@ func redirectNotice(w http.ResponseWriter, r *http.Request, path, msg string) {
 // createCustomer handles the "Add customer" dialog.
 func (s *Server) createCustomer(w http.ResponseWriter, r *http.Request, v *viewer) {
 	f := r.PostForm
+	country := f.Get("country")
+	if country == "none" { // the dialog's "Not set" entry
+		country = ""
+	}
 	in := customers.Input{
 		Email:       optional(f.Get("email")),
 		Name:        optional(f.Get("name")),
-		CountryCode: optional(f.Get("country")),
+		CountryCode: optional(country),
 		ExternalID:  optional(f.Get("external_id")),
 	}
 	c, err := s.app.Customers.Create(r.Context(), v.orgID(), in)
