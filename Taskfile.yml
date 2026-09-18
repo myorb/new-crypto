@@ -24,11 +24,24 @@ vars:
   TAILWIND:
     sh: command -v tailwindcss || echo ./bin/tailwindcss
 
+  # Postgres superuser + database, for the Docker-side admin tasks only.
+  PG_USER: '{{.POSTGRES_USER | default "postgres"}}'
+  PG_DB: '{{.POSTGRES_DB | default "templ_app"}}'
+
 dotenv: [".env"]
 
 tasks:
+  # ---------------------------------------------------------------------------
+  # Database (see db/README.md)
+  # ---------------------------------------------------------------------------
   db:
-    desc: Start Postgres 18 in Docker and wait until it accepts connections
+    desc: Start Postgres 18 in Docker and apply pending migrations
+    cmds:
+      - task: db:up
+      - task: db:migrate
+
+  db:up:
+    desc: Start Postgres and wait until it accepts connections (roles are created on first start)
     cmds:
       - docker compose up -d --wait postgres
 
@@ -38,16 +51,65 @@ tasks:
       - docker compose down
 
   db:reset:
-    desc: Stop Postgres and drop its data, so schema.sql is re-applied on next start
+    desc: Stop Postgres and drop its data. Next `task db` recreates roles and re-applies all migrations
     cmds:
       - docker compose down -v
 
+  db:migrate:
+    desc: Apply all pending migrations (as templ_app_migrator, via MIGRATE_DATABASE_URL)
+    cmds:
+      - go run ./cmd/migrate up
+
+  db:status:
+    desc: Show which migrations are applied
+    cmds:
+      - go run ./cmd/migrate status
+
+  db:rollback:
+    desc: Roll back the most recent migration
+    cmds:
+      - go run ./cmd/migrate down
+
+  db:new:
+    desc: "Create an empty migration: task db:new NAME=add_kyc_documents"
+    requires:
+      vars: [NAME]
+    cmds:
+      - go run ./cmd/migrate create {{.NAME}}
+
   db:psql:
-    desc: Open psql inside the Postgres container
+    desc: Open psql inside the Postgres container as the superuser
     interactive: true
     cmds:
-      - docker compose exec postgres psql -U {{.POSTGRES_USER | default "postgres"}} -d {{.POSTGRES_DB | default "templ_app"}}
+      - docker compose exec postgres psql -U {{.PG_USER}} -d {{.PG_DB}}
 
+  db:grants:
+    desc: Show what the runtime role (templ_app) may do on each table
+    cmds:
+      - |
+        docker compose exec -T postgres psql -U {{.PG_USER}} -d {{.PG_DB}} <<'SQL'
+        \echo --- table privileges of templ_app ---
+        SELECT c.relname AS table,
+               coalesce(string_agg(p.priv, ', ' ORDER BY p.priv) FILTER (WHERE has_table_privilege('templ_app', c.oid, p.priv)), '(none)') AS privileges
+        FROM pg_class c
+        CROSS JOIN (VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) AS p(priv)
+        WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'v')
+        GROUP BY c.relname ORDER BY c.relname;
+        \echo --- column-level privileges of templ_app ---
+        SELECT table_name, privilege_type, string_agg(column_name, ', ' ORDER BY column_name) AS columns
+        FROM information_schema.role_column_grants
+        WHERE grantee = 'templ_app' AND table_schema = 'public'
+        GROUP BY table_name, privilege_type ORDER BY table_name;
+        SQL
+
+  sqlc:
+    desc: Regenerate internal/store from db/migrations + db/queries
+    cmds:
+      - sqlc generate
+
+  # ---------------------------------------------------------------------------
+  # App
+  # ---------------------------------------------------------------------------
   templ:
     desc: Run templ with integrated server and hot reload
     cmds:

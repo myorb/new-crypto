@@ -84,9 +84,12 @@ FROM assets a
 CROSS JOIN unnest(ARRAY['platform_fee_revenue', 'platform_network_fees', 'platform_hot_wallet', 'platform_cold_wallet']::ledger_account_type[]) AS t
 ON CONFLICT DO NOTHING;
 
--- Platform-wide default fee: 1% on deposits, 0.5% + network fee on withdrawals.
-INSERT INTO fee_schedules (organization_id, asset_id, deposit_fee_bps, withdrawal_fee_bps, pass_network_fee)
-VALUES (NULL, NULL, 100, 50, TRUE)
+-- Platform-wide default pricing: 1% on deposits, no spread, no flat network fee
+-- yet (set deposit_network_fee once the sweep cost per network is measured),
+-- 0.5% + actual network fee on withdrawals.
+INSERT INTO fee_schedules (organization_id, asset_id, deposit_fee_bps, spread_bps, deposit_network_fee, network_fee_payer,
+                           withdrawal_fee_bps, pass_network_fee)
+VALUES (NULL, NULL, 100, 0, 0, 'merchant', 50, TRUE)
 ON CONFLICT DO NOTHING;
 
 -- +goose Down

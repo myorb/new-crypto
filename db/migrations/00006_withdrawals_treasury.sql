@@ -12,7 +12,8 @@ CREATE TABLE withdrawals (
     to_address           TEXT              NOT NULL,
     to_memo              TEXT,
     amount               crypto_amount     NOT NULL CHECK (amount > 0),
-    fee_amount           crypto_amount     NOT NULL DEFAULT 0,               -- our fee
+    fee_amount           crypto_amount     NOT NULL DEFAULT 0,               -- our fee (percentage + fixed), snapshotted at pricing time
+    fee_bps_applied      INT,                                                -- the percentage that produced fee_amount; fee_schedule_id is added in 00007
     network_fee_native   crypto_amount,                                      -- actual native fee paid
     status               withdrawal_status NOT NULL DEFAULT 'pending_approval',
     from_address_id      UUID              REFERENCES addresses(id),
@@ -29,6 +30,7 @@ CREATE TABLE withdrawals (
     completed_at         TIMESTAMPTZ,
     UNIQUE (organization_id, external_id),
     CONSTRAINT withdrawals_fee            CHECK (fee_amount >= 0),
+    CONSTRAINT withdrawals_fee_bps        CHECK (fee_bps_applied IS NULL OR fee_bps_applied BETWEEN 0 AND 10000),
     CONSTRAINT withdrawals_network_fee    CHECK (network_fee_native IS NULL OR network_fee_native >= 0),
     CONSTRAINT withdrawals_memo_not_empty CHECK (to_memo IS NULL OR to_memo <> ''),
     -- a named approver always comes with a timestamp; a timestamp alone is a policy auto-approval
@@ -88,10 +90,21 @@ CREATE TABLE internal_transfers (
     status          internal_transfer_status NOT NULL DEFAULT 'queued',
     transaction_id  UUID                     REFERENCES transactions(id),
     external_ref    TEXT,
+    -- Resource accounting, so the real cost of a sweep is known even when nothing
+    -- was burned (Tron energy delegation): what the chain consumed, and what the
+    -- platform actually spent in native units (burn + activation + rented energy).
+    energy_used     BIGINT,
+    bandwidth_used  BIGINT,
+    cost_native     crypto_amount,
     failure_reason  TEXT,
     created_at      TIMESTAMPTZ              NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ              NOT NULL DEFAULT now(),
-    CONSTRAINT internal_transfers_distinct CHECK (from_address_id <> to_address_id)
+    CONSTRAINT internal_transfers_distinct  CHECK (from_address_id <> to_address_id),
+    CONSTRAINT internal_transfers_resources CHECK (
+        (energy_used    IS NULL OR energy_used    >= 0) AND
+        (bandwidth_used IS NULL OR bandwidth_used >= 0) AND
+        (cost_native    IS NULL OR cost_native    >= 0)
+    )
 );
 CREATE TRIGGER trg_internal_transfers_updated BEFORE UPDATE ON internal_transfers FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE INDEX internal_transfers_queue_idx ON internal_transfers(status, created_at) WHERE status IN ('queued', 'broadcast');

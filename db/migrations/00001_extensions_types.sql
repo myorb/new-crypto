@@ -62,6 +62,7 @@ CREATE TYPE ledger_account_type      AS ENUM (
     'merchant_available', 'merchant_pending', 'merchant_locked',
     'platform_fee_revenue', 'platform_network_fees', 'platform_hot_wallet', 'platform_cold_wallet'
 );
+CREATE TYPE fee_payer                AS ENUM ('customer', 'merchant', 'platform');   -- who bears a flat network fee
 CREATE TYPE webhook_delivery_status  AS ENUM ('pending', 'succeeded', 'failed', 'exhausted');
 
 -- -----------------------------------------------------------------------------
@@ -90,6 +91,7 @@ END $$;
 DROP FUNCTION forbid_change();
 DROP FUNCTION set_updated_at();
 DROP TYPE webhook_delivery_status;
+DROP TYPE fee_payer;
 DROP TYPE ledger_account_type;
 DROP TYPE internal_transfer_status;
 DROP TYPE internal_transfer_kind;

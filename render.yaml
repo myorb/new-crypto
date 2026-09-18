@@ -1,0 +1,20 @@
+# Render Blueprint: the deploy config lives in the repo instead of the dashboard.
+#
+# Hook it up once: Render dashboard > New > Blueprint > pick this repo. Because
+# `name` matches the existing service, Render applies this config to that
+# service rather than creating a second one. Fields left out fall back to
+# Render defaults, so make sure `plan` (and `region`, if not Oregon) match what
+# the dashboard shows for the service before the first sync.
+services:
+  - type: web
+    name: new-crypto
+    runtime: go
+    plan: free
+    # region: frankfurt
+    # `task` is not on Render's build image, so run it through the Go toolchain.
+    # `task build` compiles assets/css/output.css with the Tailwind standalone
+    # CLI (downloaded into ./bin) and then builds the ./app binary.
+    buildCommand: go run github.com/go-task/task/v3/cmd/task@v3.53.1 build
+    startCommand: ./app
+    healthCheckPath: /
+    autoDeployTrigger: commit

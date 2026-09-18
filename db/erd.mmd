@@ -237,7 +237,9 @@ erDiagram
         uuid address_id FK
         numeric amount_due
         numeric amount_paid
-        numeric exchange_rate
+        numeric exchange_rate "as quoted"
+        numeric source_rate "mid-market"
+        int spread_bps
         bigint rate_id FK
         boolean is_selected
     }
@@ -251,6 +253,11 @@ erDiagram
         smallint provider_id FK
         uuid transfer_id UK,FK
         numeric amount
+        numeric fee_amount
+        int fee_bps_applied
+        numeric spread_amount
+        numeric network_fee_amount
+        uuid fee_schedule_id FK
         payment_status status
     }
 
@@ -263,6 +270,9 @@ erDiagram
         text to_address
         text to_memo
         numeric amount
+        numeric fee_amount
+        int fee_bps_applied
+        uuid fee_schedule_id FK
         withdrawal_status status
         uuid from_address_id FK
         uuid transaction_id FK
@@ -283,6 +293,8 @@ erDiagram
         uuid from_address_id FK
         uuid to_address_id FK
         numeric amount
+        bigint energy_used
+        numeric cost_native
         uuid transaction_id FK
     }
 
@@ -292,8 +304,15 @@ erDiagram
         uuid organization_id FK "NULL = platform default"
         smallint asset_id FK "NULL = all assets"
         int deposit_fee_bps
+        numeric deposit_fee_min
+        numeric deposit_fee_max
+        numeric deposit_network_fee
+        fee_payer network_fee_payer
+        int spread_bps
         int withdrawal_fee_bps
         boolean pass_network_fee
+        text fixed_fee_currency "when asset_id is NULL"
+        timestamptz effective_to "NULL = open"
     }
     ledger_accounts {
         uuid id PK
@@ -428,6 +447,8 @@ erDiagram
     %% fees & ledger
     organizations  o|--o{ fee_schedules             : "override"
     assets         o|--o{ fee_schedules             : "per asset"
+    fee_schedules  o|--o{ payments                  : "priced by"
+    fee_schedules  o|--o{ withdrawals               : "priced by"
     organizations  o|--o{ ledger_accounts           : "merchant accts"
     assets         ||--o{ ledger_accounts           : "denominated"
     ledger_journals ||--|{ ledger_entries           : "balanced"

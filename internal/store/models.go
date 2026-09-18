@@ -171,6 +171,59 @@ func (e AuthProvider) Valid() bool {
 	return false
 }
 
+type FeePayer string
+
+const (
+	FeePayerCustomer FeePayer = "customer"
+	FeePayerMerchant FeePayer = "merchant"
+	FeePayerPlatform FeePayer = "platform"
+)
+
+func (e *FeePayer) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = FeePayer(s)
+	case string:
+		*e = FeePayer(s)
+	default:
+		return fmt.Errorf("unsupported scan type for FeePayer: %T", src)
+	}
+	return nil
+}
+
+type NullFeePayer struct {
+	FeePayer FeePayer
+	Valid    bool // Valid is true if FeePayer is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullFeePayer) Scan(value interface{}) error {
+	if value == nil {
+		ns.FeePayer, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.FeePayer.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullFeePayer) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.FeePayer), nil
+}
+
+func (e FeePayer) Valid() bool {
+	switch e {
+	case FeePayerCustomer,
+		FeePayerMerchant,
+		FeePayerPlatform:
+		return true
+	}
+	return false
+}
+
 type InternalTransferKind string
 
 const (
@@ -1191,9 +1244,15 @@ type FeeSchedule struct {
 	AssetID            pgtype.Int2
 	DepositFeeBps      int32
 	DepositFeeFixed    pgtype.Numeric
+	DepositFeeMin      pgtype.Numeric
+	DepositFeeMax      pgtype.Numeric
+	DepositNetworkFee  pgtype.Numeric
+	NetworkFeePayer    FeePayer
+	SpreadBps          int32
 	WithdrawalFeeBps   int32
 	WithdrawalFeeFixed pgtype.Numeric
 	PassNetworkFee     bool
+	FixedFeeCurrency   pgtype.Text
 	EffectiveFrom      pgtype.Timestamptz
 	EffectiveTo        pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
@@ -1220,6 +1279,9 @@ type InternalTransfer struct {
 	Status        InternalTransferStatus
 	TransactionID pgtype.UUID
 	ExternalRef   pgtype.Text
+	EnergyUsed    pgtype.Int8
+	BandwidthUsed pgtype.Int8
+	CostNative    pgtype.Numeric
 	FailureReason pgtype.Text
 	CreatedAt     pgtype.Timestamptz
 	UpdatedAt     pgtype.Timestamptz
@@ -1256,6 +1318,8 @@ type InvoicePaymentOption struct {
 	AmountDue       pgtype.Numeric
 	AmountPaid      pgtype.Numeric
 	ExchangeRate    pgtype.Numeric
+	SourceRate      pgtype.Numeric
+	SpreadBps       pgtype.Int4
 	RateID          pgtype.Int8
 	RateLockedUntil pgtype.Timestamptz
 	IsSelected      bool
@@ -1312,9 +1376,9 @@ type MerchantBalance struct {
 	AssetCode      string
 	Symbol         string
 	NetworkCode    string
-	Available      int64
-	Pending        int64
-	Locked         int64
+	Available      pgtype.Numeric
+	Pending        pgtype.Numeric
+	Locked         pgtype.Numeric
 }
 
 type Network struct {
@@ -1395,22 +1459,26 @@ type OrganizationMember struct {
 }
 
 type Payment struct {
-	ID             pgtype.UUID
-	OrganizationID pgtype.UUID
-	InvoiceID      pgtype.UUID
-	OptionID       pgtype.UUID
-	AddressID      pgtype.UUID
-	AssetID        int16
-	ProviderID     int16
-	TransferID     pgtype.UUID
-	Amount         pgtype.Numeric
-	FeeAmount      pgtype.Numeric
-	Status         PaymentStatus
-	DetectedAt     pgtype.Timestamptz
-	ConfirmedAt    pgtype.Timestamptz
-	CreditedAt     pgtype.Timestamptz
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
+	ID               pgtype.UUID
+	OrganizationID   pgtype.UUID
+	InvoiceID        pgtype.UUID
+	OptionID         pgtype.UUID
+	AddressID        pgtype.UUID
+	AssetID          int16
+	ProviderID       int16
+	TransferID       pgtype.UUID
+	Amount           pgtype.Numeric
+	FeeAmount        pgtype.Numeric
+	FeeBpsApplied    pgtype.Int4
+	SpreadAmount     pgtype.Numeric
+	NetworkFeeAmount pgtype.Numeric
+	Status           PaymentStatus
+	DetectedAt       pgtype.Timestamptz
+	ConfirmedAt      pgtype.Timestamptz
+	CreditedAt       pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	FeeScheduleID    pgtype.UUID
 }
 
 type PaymentProvider struct {
@@ -1630,6 +1698,7 @@ type Withdrawal struct {
 	ToMemo            pgtype.Text
 	Amount            pgtype.Numeric
 	FeeAmount         pgtype.Numeric
+	FeeBpsApplied     pgtype.Int4
 	NetworkFeeNative  pgtype.Numeric
 	Status            WithdrawalStatus
 	FromAddressID     pgtype.UUID
@@ -1644,6 +1713,7 @@ type Withdrawal struct {
 	CreatedAt         pgtype.Timestamptz
 	UpdatedAt         pgtype.Timestamptz
 	CompletedAt       pgtype.Timestamptz
+	FeeScheduleID     pgtype.UUID
 }
 
 type WithdrawalAddress struct {
