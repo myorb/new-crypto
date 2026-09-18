@@ -8,7 +8,7 @@ with a **least-privilege role** that cannot change the schema or delete money.
 
 ```
 db/
-  migrations/        the schema, as goose migrations (00001–00009 = baseline v1.1)
+  migrations/        the schema, as goose migrations (00001–00009 = baseline v1.1, 00010 = customers + payment links)
   queries/           sqlc query sources, generated into internal/store   (task sqlc)
   roles.sql          creates templ_app_migrator + templ_app; run once by a superuser
   init/01-roles.sh   Docker only: runs roles.sql when the data volume is first created
@@ -93,6 +93,13 @@ Reference data (chains, tokens, providers) is added by a migration with
   row. Every payment / withdrawal stores the `fee_schedule_id`, the bps applied
   and the amounts kept (`fee_amount`, `spread_amount`, `network_fee_amount`);
   their sum cannot exceed the payment.
+- **Customers** carry an email or a merchant `external_id` (or both), each
+  unique per organization; `status = 'blocked'` and `blocked_at` are kept in
+  step by a `CHECK`. Invoices reference them, so a customer is never deleted.
+- **Payment links** have either a fixed `price_amount` or a `min`/`max` range
+  for payer-chosen amounts, never both; the slug is a 6–64 character URL token,
+  `uses_count` counts confirmed invoices and `invoice_ttl_seconds` is bounded
+  to 1 minute … 7 days.
 - **Amounts, confirmations, attempts** are range-checked.
 - **Webhook endpoints** must be `https://`. Filtering private / link-local targets (SSRF) is the app's job, as is validating invoice `callback_url`.
 - **Reference tables** (`networks`, `assets`, `payment_providers`, `provider_*`) are read-only for the app except `is_enabled` (and `priority` on `provider_networks`), so a compromised app cannot repoint RPC endpoints or loosen an address regex.

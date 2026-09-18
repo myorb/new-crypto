@@ -50,6 +50,13 @@ func run() error {
 			return err
 		}
 		defer a.Close()
+		if cfg.DevSeed && !cfg.Production() {
+			res, err := a.Seed(ctx)
+			if err != nil {
+				return fmt.Errorf("dev seed: %w", err)
+			}
+			log.Warn("dev seed ready: sign in at /login", "email", res.Email, "password", res.Password, "organization", res.Organization)
+		}
 	}
 
 	ln, err := listen()

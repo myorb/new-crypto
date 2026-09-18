@@ -1,12 +1,17 @@
 // Package web serves the dashboard and public pages. It is a delivery layer:
-// it maps HTTP to domain services and templ pages and holds no business
-// rules. The dashboard pages still render fixtures (see blocks/); wiring
-// each page to the services is done page by page in handlers here.
+// it maps HTTP to domain services and templ components and holds no
+// business rules. Each dashboard page has a view assembler (view_*.go) that
+// turns service results into the block's view model; the templates in
+// blocks/ are untouched.
+//
+// Without an *app.App (no DATABASE_URL) the server falls back to the fixture
+// pages so the UI can still be developed on its own.
 package web
 
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -18,25 +23,80 @@ import (
 
 	"templ-app/components"
 	"templ-app/internal/app"
+	"templ-app/internal/store"
 	"templ-app/pages"
 )
 
-// Server is the HTTP front end. app may be nil, in which case only the
-// fixture-backed pages work and /healthz reports the database as absent.
+// Server is the HTTP front end.
 type Server struct {
 	app *app.App
+	log *slog.Logger
 }
 
-// New builds the server.
-func New(a *app.App) *Server { return &Server{app: a} }
+// New builds the server. a may be nil (fixture mode).
+func New(a *app.App) *Server {
+	log := slog.Default()
+	if a != nil {
+		log = a.Log
+	}
+	return &Server{app: a, log: log}
+}
+
+func (s *Server) production() bool { return s.app != nil && s.app.Config.Production() }
 
 // Handler returns the routed mux.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.assets(mux)
 	mux.HandleFunc("GET /healthz", s.health)
-
 	mux.Handle("GET /", templ.Handler(pages.Home()))
+	mux.HandleFunc("GET /mode", setMode)
+
+	if s.app == nil {
+		s.fixtureRoutes(mux)
+		return mux
+	}
+
+	// auth
+	mux.HandleFunc("GET /login", s.loginPage)
+	mux.HandleFunc("POST /login", s.loginPost)
+	mux.HandleFunc("GET /signup", s.signupPage)
+	mux.HandleFunc("POST /signup", s.signupPost)
+	mux.HandleFunc("GET /verify", s.verifyPage)
+	mux.HandleFunc("POST /verify", s.verifyPost)
+	mux.HandleFunc("GET /2fa/setup", s.setupPage)
+	mux.HandleFunc("POST /2fa/setup", s.setupPost)
+	mux.HandleFunc("GET /forgot-password", s.forgotPage)
+	mux.HandleFunc("POST /forgot-password", s.forgotPost)
+	mux.HandleFunc("GET /logout", s.logout)
+	mux.HandleFunc("GET /org/switch", s.switchOrg)
+
+	// dashboard
+	mux.HandleFunc("GET /dashboard", s.requireViewer(s.overview))
+	mux.HandleFunc("GET /dashboard/payments", s.requireViewer(s.paymentsPage))
+	mux.HandleFunc("GET /dashboard/links", s.requireViewer(s.linksPage))
+	mux.HandleFunc("GET /dashboard/payouts", s.requireViewer(s.payoutsPage))
+	mux.HandleFunc("GET /dashboard/wallets", s.requireViewer(s.walletsPage))
+	mux.HandleFunc("GET /dashboard/customers", s.requireViewer(s.customersPage))
+	mux.HandleFunc("POST /dashboard/customers", s.requireRole(customersPath, store.OrganizationRoleFinance, s.createCustomer))
+	mux.HandleFunc("POST /dashboard/customers/status", s.requireRole(customersPath, store.OrganizationRoleFinance, s.customerStatus))
+	mux.HandleFunc("POST /dashboard/links", s.requireRole(linksPath, store.OrganizationRoleFinance, s.createLink))
+	mux.HandleFunc("POST /dashboard/links/status", s.requireRole(linksPath, store.OrganizationRoleFinance, s.linkStatus))
+	mux.HandleFunc("GET /dashboard/api-keys", s.requireViewer(s.apiKeysPage))
+	mux.HandleFunc("GET /dashboard/webhooks", s.requireViewer(s.webhooksPage))
+	mux.HandleFunc("GET /dashboard/settings", s.requireViewer(s.settingsPage))
+	mux.HandleFunc("GET /dashboard/account", s.requireViewer(s.accountPage))
+
+	if !s.production() {
+		mux.HandleFunc("GET /dev/simulate", s.requireViewer(s.devSimulate))
+		mux.HandleFunc("GET /dev/fixtures", s.requireViewer(s.devFixturesHandler))
+		mux.HandleFunc("GET /dev/payout", s.requireViewer(s.devPayout))
+	}
+	return mux
+}
+
+// fixtureRoutes serve the design previews when there is no database.
+func (s *Server) fixtureRoutes(mux *http.ServeMux) {
 	dashboardPages := map[string]func(sandbox bool) templ.Component{
 		"/dashboard":           pages.Dashboard,
 		"/dashboard/payments":  pages.Payments,
@@ -52,7 +112,6 @@ func (s *Server) Handler() http.Handler {
 			templ.Handler(page(IsSandbox(r))).ServeHTTP(w, r)
 		})
 	}
-	// Settings pages take a ?tab= section, e.g. /dashboard/settings?tab=billing.
 	tabbedPages := map[string]func(sandbox bool, tab string) templ.Component{
 		"/dashboard/settings": pages.Settings,
 		"/dashboard/account":  pages.Account,
@@ -62,17 +121,9 @@ func (s *Server) Handler() http.Handler {
 			templ.Handler(page(IsSandbox(r), r.URL.Query().Get("tab"))).ServeHTTP(w, r)
 		})
 	}
-	mux.HandleFunc("GET /mode", setMode)
-	// Auth screens are frontend-only mocks: forms navigate to the next step
-	// client-side. Wire real handlers behind the same paths.
-	mux.Handle("GET /login", templ.Handler(pages.Login()))
-	mux.Handle("GET /signup", templ.Handler(pages.Signup()))
+	mux.Handle("GET /login", templ.Handler(pages.Login("", "Fixture mode: set DATABASE_URL to sign in", "/dashboard")))
+	mux.Handle("GET /signup", templ.Handler(pages.Signup("")))
 	mux.Handle("GET /forgot-password", templ.Handler(pages.ForgotPassword()))
-	mux.Handle("GET /2fa/setup", templ.Handler(pages.Setup2FA()))
-	mux.HandleFunc("GET /verify", func(w http.ResponseWriter, r *http.Request) {
-		templ.Handler(pages.Verify(r.URL.Query().Get("method"))).ServeHTTP(w, r)
-	})
-	return mux
 }
 
 // health reports process liveness and database reachability.
@@ -118,11 +169,15 @@ func setMode(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
-	next := r.URL.Query().Get("next")
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
-		next = "/dashboard"
+	http.Redirect(w, r, safeNext(r.URL.Query().Get("next"), "/dashboard"), http.StatusSeeOther)
+}
+
+// safeNext only allows same-site relative redirects.
+func safeNext(next, def string) string {
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.ContainsAny(next, "\\\r\n") {
+		return def
 	}
-	http.Redirect(w, r, next, http.StatusSeeOther)
+	return next
 }
 
 func (s *Server) assets(mux *http.ServeMux) {
@@ -157,6 +212,7 @@ func ClientIP(r *http.Request) *netip.Addr {
 		host = r.RemoteAddr
 	}
 	if ip, err := netip.ParseAddr(host); err == nil {
+		ip = ip.Unmap()
 		return &ip
 	}
 	return nil

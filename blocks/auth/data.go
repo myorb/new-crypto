@@ -1,6 +1,5 @@
-// Package auth holds the sign-in, sign-up and two-factor screens. They are
-// frontend-only: forms navigate to the next step client-side so the flow
-// can be clicked through without a backend.
+// Package auth holds the sign-in, sign-up and two-factor screens. Forms post
+// to the handlers in internal/web; the fixtures remain for previews.
 package auth
 
 import (
@@ -11,16 +10,20 @@ import (
 // Verify2FA is the state of the second-factor step.
 type Verify2FA struct {
 	Email  string
-	Method string // "app", "sms", "passkey"
+	Method string // "app", "sms", "recovery"
 	Phone  string // masked, for sms
+	Error  string // validation message from the last attempt
+	Next   string // where to go after verification
 }
 
 // Setup2FA is the state of the authenticator enrolment step.
 type Setup2FA struct {
-	Email   string
-	Issuer  string
-	Secret  string // base32, grouped
-	OTPAuth string
+	Email    string
+	Issuer   string
+	Secret   string // base32, grouped
+	OTPAuth  string
+	MethodID string // the unverified method row this enrolment confirms
+	Error    string
 }
 
 // VerifyFixture returns the sample verification state.

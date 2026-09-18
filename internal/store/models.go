@@ -173,6 +173,57 @@ func (e AuthProvider) Valid() bool {
 	return false
 }
 
+type CustomerStatus string
+
+const (
+	CustomerStatusActive  CustomerStatus = "active"
+	CustomerStatusBlocked CustomerStatus = "blocked"
+)
+
+func (e *CustomerStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = CustomerStatus(s)
+	case string:
+		*e = CustomerStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for CustomerStatus: %T", src)
+	}
+	return nil
+}
+
+type NullCustomerStatus struct {
+	CustomerStatus CustomerStatus
+	Valid          bool // Valid is true if CustomerStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullCustomerStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.CustomerStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.CustomerStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullCustomerStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.CustomerStatus), nil
+}
+
+func (e CustomerStatus) Valid() bool {
+	switch e {
+	case CustomerStatusActive,
+		CustomerStatusBlocked:
+		return true
+	}
+	return false
+}
+
 type FeePayer string
 
 const (
@@ -677,6 +728,63 @@ func (e OrganizationStatus) Valid() bool {
 		OrganizationStatusActive,
 		OrganizationStatusSuspended,
 		OrganizationStatusClosed:
+		return true
+	}
+	return false
+}
+
+type PaymentLinkStatus string
+
+const (
+	PaymentLinkStatusActive    PaymentLinkStatus = "active"
+	PaymentLinkStatusPaused    PaymentLinkStatus = "paused"
+	PaymentLinkStatusCompleted PaymentLinkStatus = "completed"
+	PaymentLinkStatusExpired   PaymentLinkStatus = "expired"
+	PaymentLinkStatusArchived  PaymentLinkStatus = "archived"
+)
+
+func (e *PaymentLinkStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PaymentLinkStatus(s)
+	case string:
+		*e = PaymentLinkStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PaymentLinkStatus: %T", src)
+	}
+	return nil
+}
+
+type NullPaymentLinkStatus struct {
+	PaymentLinkStatus PaymentLinkStatus
+	Valid             bool // Valid is true if PaymentLinkStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPaymentLinkStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.PaymentLinkStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PaymentLinkStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPaymentLinkStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PaymentLinkStatus), nil
+}
+
+func (e PaymentLinkStatus) Valid() bool {
+	switch e {
+	case PaymentLinkStatusActive,
+		PaymentLinkStatusPaused,
+		PaymentLinkStatusCompleted,
+		PaymentLinkStatusExpired,
+		PaymentLinkStatusArchived:
 		return true
 	}
 	return false
@@ -1221,6 +1329,21 @@ type ChainCursor struct {
 	UpdatedAt        time.Time
 }
 
+type Customer struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	ExternalID     *string
+	Email          *string
+	Name           *string
+	CountryCode    pgtype.Text
+	Status         CustomerStatus
+	BlockedAt      *time.Time
+	BlockedReason  *string
+	Metadata       []byte
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type Event struct {
 	ID             uuid.UUID
 	OrganizationID uuid.UUID
@@ -1308,6 +1431,8 @@ type Invoice struct {
 	CreatedByApiKey uuid.NullUUID
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	CustomerID      uuid.NullUUID
+	PaymentLinkID   uuid.NullUUID
 }
 
 type InvoicePaymentOption struct {
@@ -1481,6 +1606,39 @@ type Payment struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	FeeScheduleID    uuid.NullUUID
+}
+
+type PaymentLink struct {
+	ID                uuid.UUID
+	OrganizationID    uuid.UUID
+	Slug              string
+	Name              string
+	Description       *string
+	PriceCurrency     string
+	PriceAmount       pgtype.Numeric
+	MinAmount         pgtype.Numeric
+	MaxAmount         pgtype.Numeric
+	Status            PaymentLinkStatus
+	MaxUses           pgtype.Int4
+	UsesCount         int32
+	ViewCount         int64
+	InvoiceTtlSeconds int32
+	CollectEmail      bool
+	CustomerID        uuid.NullUUID
+	CallbackUrl       *string
+	ReturnUrl         *string
+	Metadata          []byte
+	ExpiresAt         *time.Time
+	LastViewedAt      *time.Time
+	CreatedBy         uuid.NullUUID
+	CreatedByApiKey   uuid.NullUUID
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type PaymentLinkAsset struct {
+	PaymentLinkID uuid.UUID
+	AssetID       int16
 }
 
 type PaymentProvider struct {

@@ -20,12 +20,42 @@ templ heading(title, description string) {
 	</div>
 }
 
-// mockForm navigates to next on submit so the flow is walkable without a
-// backend. Replace with a real POST in production.
-templ mockForm(next string) {
-	<form class="grid gap-4" method="post" onsubmit={ templ.JSUnsafeFuncCall("event.preventDefault();window.location.href=" + fmt.Sprintf("%q", next)) }>
+// postForm submits to the handler mounted at action; the server redirects
+// to the next step or back with ?error=.
+templ postForm(action string) {
+	<form class="grid gap-4" method="post" action={ templ.SafeURL(action) }>
 		{ children... }
 	</form>
+}
+
+// formError shows a server-side validation message above a form.
+templ formError(msg string) {
+	if msg != "" {
+		<div role="alert" class="border-destructive/40 bg-destructive/10 text-destructive rounded-lg border px-3 py-2 text-sm">{ msg }</div>
+	}
+}
+
+// formNotice shows a neutral message above a form.
+templ formNotice(msg string) {
+	if msg != "" {
+		<div role="status" class="border-border bg-muted/50 text-foreground rounded-lg border px-3 py-2 text-sm">{ msg }</div>
+	}
+}
+
+// RecoveryCodes shows freshly generated recovery codes exactly once.
+templ RecoveryCodes(codes []string, next string) {
+	<div class="bg-primary/10 text-primary mb-5 flex size-12 items-center justify-center rounded-2xl">
+		@icon.FileKey(icon.Props{Class: "size-6"})
+	</div>
+	@heading("Save your recovery codes", "Each code signs you in once if you lose your authenticator. Store them somewhere safe; they will not be shown again.")
+	<ul class="bg-muted/50 mb-6 grid grid-cols-2 gap-2 rounded-xl p-4 font-mono text-sm tracking-wider">
+		for _, c := range codes {
+			<li>{ c }</li>
+		}
+	</ul>
+	@button.Button(button.Props{Class: "w-full", Href: next}) {
+		I have saved them, continue
+	}
 }
 
 // passwordField is an input with a show/hide toggle.
@@ -73,9 +103,12 @@ templ googleMark() {
 }
 
 // Login is the sign-in screen.
-templ Login() {
+templ Login(errMsg, notice, next string) {
 	@heading("Welcome back", "Sign in to your PayChain dashboard")
-	@mockForm("/verify") {
+	@formError(errMsg)
+	@formNotice(notice)
+	@postForm("/login") {
+		<input type="hidden" name="next" value={ next }/>
 		@field.Field() {
 			@field.Label(field.LabelProps{For: "email"}) {
 				Work email
@@ -120,9 +153,10 @@ var countryOptions = []struct{ Value, Label string }{
 }
 
 // Signup is the account creation screen.
-templ Signup() {
+templ Signup(errMsg string) {
 	@heading("Create your account", "Start accepting crypto in minutes. No card required.")
-	@mockForm("/2fa/setup") {
+	@formError(errMsg)
+	@postForm("/signup") {
 		<div class="grid gap-4 sm:grid-cols-2">
 			@field.Field() {
 				@field.Label(field.LabelProps{For: "name"}) {
@@ -251,10 +285,14 @@ templ Verify(v Verify2FA) {
 	switch v.Method {
 		case "sms":
 			@heading("Check your phone", "We sent a 6-digit code to "+v.Phone)
+		case "recovery":
+			@heading("Use a recovery code", "Enter one of the recovery codes you saved when you set up two-factor authentication for "+v.Email)
 		default:
 			@heading("Two-factor authentication", "Enter the 6-digit code from your authenticator app to finish signing in as "+v.Email)
 	}
-	@mockForm("/dashboard") {
+	@formError(v.Error)
+	@postForm("/verify") {
+		<input type="hidden" name="next" value={ v.Next }/>
 		@otpInput("code")
 		<label class="flex items-center gap-2 text-sm">
 			<input type="checkbox" name="trust" class="accent-primary size-4 rounded"/>
@@ -273,7 +311,7 @@ templ Verify(v Verify2FA) {
 		} else {
 			@altMethod(icon.Smartphone, "Text a code to "+v.Phone, "/verify?method=sms")
 		}
-		@altMethod(icon.FileKey, "Use a recovery code", "#")
+		@altMethod(icon.FileKey, "Use a recovery code", "/verify?method=recovery")
 	</div>
 }
 
@@ -370,7 +408,9 @@ templ Setup(s Setup2FA) {
 			</div>
 		}
 		@setupStep(2, "Enter the 6-digit code") {
-			@mockForm("/dashboard") {
+			@formError(s.Error)
+			@postForm("/2fa/setup") {
+				<input type="hidden" name="method_id" value={ s.MethodID }/>
 				@otpInput("code")
 				@button.Button(button.Props{Type: button.TypeSubmit, Class: "w-full"}) {
 					Turn on two-factor authentication
@@ -402,7 +442,7 @@ templ Forgot() {
 		Back to sign in
 	</a>
 	@heading("Reset your password", "Enter your work email and we will send a link to choose a new password.")
-	@mockForm("/login") {
+	@postForm("/forgot-password") {
 		@field.Field() {
 			@field.Label(field.LabelProps{For: "email"}) {
 				Work email

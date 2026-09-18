@@ -121,3 +121,11 @@ WHERE id = $1 AND organization_id = $2;
 
 -- name: DeleteWithdrawalAddress :execrows
 DELETE FROM withdrawal_addresses WHERE id = $1 AND organization_id = $2;
+
+-- Dashboard aggregates ----------------------------------------------------------
+
+-- name: SumCompletedWithdrawalsByAsset :many
+SELECT asset_id, count(*) AS count, COALESCE(SUM(amount), 0)::crypto_amount AS amount, COALESCE(SUM(fee_amount), 0)::crypto_amount AS fees
+FROM withdrawals
+WHERE organization_id = $1 AND status = 'confirmed' AND completed_at >= $2
+GROUP BY asset_id;

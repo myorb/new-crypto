@@ -1,6 +1,9 @@
 package app_test
 
 import (
+	"math/rand/v2"
+	"net/netip"
+
 	"github.com/google/uuid"
 
 	"templ-app/internal/checkout"
@@ -12,7 +15,15 @@ import (
 
 func errInvalidCredentials() error { return identity.ErrInvalidCredentials }
 
-func identityClient() identity.Client { return identity.Client{UserAgent: "integration-test"} }
+// testClientIP is unique per test process. The login lockout counts failures
+// per email OR per IP, and a client with no IP is recorded as 0.0.0.0, so
+// without this every run of every integration test shares one lockout bucket
+// and the tenth run in fifteen minutes fails on a deliberate bad password.
+var testClientIP = netip.AddrFrom4([4]byte{203, 0, 113, byte(1 + rand.IntN(254))})
+
+func identityClient() identity.Client {
+	return identity.Client{UserAgent: "integration-test", IP: &testClientIP}
+}
 
 func orgInput(slug string, owner uuid.UUID) org.CreateInput {
 	return org.CreateInput{Slug: slug, Name: "Acme " + slug, DefaultCurrency: "USD", OwnerID: owner}

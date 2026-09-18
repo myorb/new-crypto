@@ -292,7 +292,11 @@ templ sendDialog(d WalletsData) {
 					@field.Label(field.LabelProps{For: "send-asset"}) {
 						Asset
 					}
-					@fieldSelect("send-asset", opts, opts[0].Value)
+					if len(opts) > 0 {
+						@fieldSelect("send-asset", opts, opts[0].Value)
+					} else {
+						<p class="text-muted-foreground text-sm">No balance to send yet.</p>
+					}
 				}
 				@field.Field() {
 					@field.Label(field.LabelProps{For: "send-network"}) {

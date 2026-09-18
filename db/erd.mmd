@@ -1,5 +1,5 @@
 ---
-title: Crypto Payment Provider · v1.1 · multi-provider / multi-network / multi-asset (schema = db/migrations)
+title: Crypto Payment Provider · v1.2 · multi-provider / multi-network / multi-asset (schema = db/migrations)
 ---
 erDiagram
     %% ───────────────── Identity & access ─────────────────
@@ -219,6 +219,39 @@ erDiagram
         transfer_direction direction
     }
 
+    %% ───────────────── Customers & payment links ─────────────────
+    customers {
+        uuid id PK
+        uuid organization_id FK
+        text external_id UK "merchant's own id"
+        citext email UK
+        text name
+        char country_code
+        customer_status status "active, blocked"
+    }
+    payment_links {
+        uuid id PK
+        uuid organization_id FK
+        text slug UK "public token: /l/<slug>"
+        text name
+        text price_currency
+        numeric price_amount "NULL = payer chooses"
+        numeric min_amount
+        numeric max_amount
+        payment_link_status status "active, paused, completed, expired, archived"
+        int max_uses "NULL = unlimited"
+        int uses_count
+        bigint view_count
+        int invoice_ttl_seconds
+        boolean collect_email
+        uuid customer_id FK
+        timestamptz expires_at
+    }
+    payment_link_assets {
+        uuid payment_link_id PK,FK
+        smallint asset_id PK,FK
+    }
+
     %% ───────────────── Payments in ─────────────────
     invoices {
         uuid id PK
@@ -227,6 +260,8 @@ erDiagram
         text price_currency "USD or asset code"
         numeric price_amount
         invoice_status status
+        uuid customer_id FK
+        uuid payment_link_id FK
         timestamptz expires_at
     }
     invoice_payment_options {
@@ -416,8 +451,19 @@ erDiagram
     assets         ||--o{ transfers                 : "of"
     addresses      o|--o{ transfers                 : "touches"
 
+    %% customers & links
+    organizations  ||--o{ customers                 : "has payers"
+    organizations  ||--o{ payment_links             : "publishes"
+    customers      o|--o{ payment_links             : "addressed to"
+    payment_links  ||--o{ payment_link_assets       : "payable in"
+    assets         ||--o{ payment_link_assets       : "offered on"
+    users          o|--o{ payment_links             : "created by"
+    api_keys       o|--o{ payment_links             : "created via"
+
     %% inbound
     organizations  ||--o{ invoices                  : "issues"
+    customers      o|--o{ invoices                  : "pays"
+    payment_links  o|--o{ invoices                  : "opens"
     api_keys       o|--o{ invoices                  : "created by"
     invoices       ||--|{ invoice_payment_options   : "payable via"
     assets         ||--o{ invoice_payment_options   : "in asset"

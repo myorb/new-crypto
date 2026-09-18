@@ -1,8 +1,9 @@
-// Package worker runs the background loops: invoice expiry, payment and
-// payout reconciliation, webhook delivery and housekeeping. Chain scanning
-// (calling provider RPCs and feeding chain.RecordTransaction) plugs in here
-// too once an adapter exists for it; the reconciliation loops only react to
-// what scanners record.
+// Package worker runs the background loops: chain scanning and confirmation
+// tracking, payout and treasury broadcasting, invoice expiry, reconciliation,
+// webhook delivery and housekeeping. The chain loops only run for providers
+// whose adapter implements chain.Scanner / chain.Broadcaster; the others are
+// driven by provider callbacks or by hand, and the reconciliation loops react
+// to whatever was recorded either way.
 package worker
 
 import (
@@ -20,6 +21,14 @@ type Intervals struct {
 	Reconcile      time.Duration // payments, payouts, treasury; default 15s
 	Webhooks       time.Duration // default 5s
 	Housekeeping   time.Duration // default 1h
+	Scan           time.Duration // block scanning and confirmation tracking; default 5s
+	Broadcast      time.Duration // payout and treasury sending; default 10s
+
+	// MaxBlocks caps how many blocks one scan pass may cover per network, so
+	// catching up after downtime cannot hold the loop open indefinitely.
+	MaxBlocks int // default 100
+	// Batch caps the rows one broadcast or tracking pass claims. Default 100.
+	Batch int32
 }
 
 func (i *Intervals) defaults() {
@@ -34,6 +43,18 @@ func (i *Intervals) defaults() {
 	}
 	if i.Housekeeping == 0 {
 		i.Housekeeping = time.Hour
+	}
+	if i.Scan == 0 {
+		i.Scan = 5 * time.Second
+	}
+	if i.Broadcast == 0 {
+		i.Broadcast = 10 * time.Second
+	}
+	if i.MaxBlocks == 0 {
+		i.MaxBlocks = 100
+	}
+	if i.Batch == 0 {
+		i.Batch = 100
 	}
 }
 
@@ -72,10 +93,29 @@ func Run(ctx context.Context, a *app.App, iv Intervals) {
 		}()
 	}
 
+	loop("scan_chains", iv.Scan, func(ctx context.Context) error {
+		return scanChains(ctx, a, log, iv.MaxBlocks)
+	})
+	loop("track_confirmations", iv.Scan, func(ctx context.Context) error {
+		return trackConfirmations(ctx, a, log, iv.Batch)
+	})
+	loop("broadcast_payouts", iv.Broadcast, func(ctx context.Context) error {
+		return broadcastPayouts(ctx, a, log, iv.Batch)
+	})
+	loop("broadcast_treasury", iv.Broadcast, func(ctx context.Context) error {
+		return broadcastTreasury(ctx, a, log, iv.Batch)
+	})
 	loop("expire_invoices", iv.ExpireInvoices, func(ctx context.Context) error {
 		n, err := a.Checkout.ExpireDue(ctx)
 		if n > 0 {
 			log.Info("invoices expired", "count", n)
+		}
+		return err
+	})
+	loop("expire_payment_links", iv.ExpireInvoices, func(ctx context.Context) error {
+		n, err := a.Checkout.ExpireDueLinks(ctx)
+		if n > 0 {
+			log.Info("payment links expired", "count", n)
 		}
 		return err
 	})
@@ -110,6 +150,9 @@ func Run(ctx context.Context, a *app.App, iv Intervals) {
 		})
 	} else {
 		log.Warn("webhook delivery disabled: no encryption key")
+	}
+	if a.Config.DevSeed && !a.Config.Production() {
+		loop("dev_rates", 5*time.Minute, a.RefreshDevRates)
 	}
 	loop("housekeeping", iv.Housekeeping, func(ctx context.Context) error {
 		if _, err := a.Identity.PurgeExpiredSessions(ctx); err != nil {

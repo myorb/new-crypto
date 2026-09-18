@@ -6,6 +6,7 @@ import (
 	"templ-app/components/button"
 	"templ-app/components/card"
 	"templ-app/components/chart"
+	"templ-app/components/dropdownmenu"
 	"templ-app/components/icon"
 	"templ-app/components/inputgroup"
 	selectcomp "templ-app/components/select"
@@ -221,4 +222,50 @@ templ tokenStack(symbols []string) {
 			</span>
 		}
 	</span>
+}
+
+// pageAlert shows the result of a form post above a page. Handlers redirect
+// back with ?error= or ?notice= so a reload never repeats the action.
+templ pageAlert(errMsg, notice string) {
+	if errMsg != "" {
+		<div role="alert" class="border-destructive/40 bg-destructive/10 text-destructive rounded-lg border px-3 py-2 text-sm">{ errMsg }</div>
+	}
+	if notice != "" {
+		<div role="status" class="border-border bg-muted/40 text-muted-foreground rounded-lg border px-3 py-2 text-sm">{ notice }</div>
+	}
+}
+
+// menuForm posts one hidden field from inside a dropdown menu. Menu items are
+// not buttons, so the item submits the form that wraps it; `contents` keeps
+// the menu's own layout.
+templ menuForm(action, id, field, value string) {
+	<form method="post" action={ templ.SafeURL(action) } class="contents">
+		<input type="hidden" name="id" value={ id }/>
+		if field != "" {
+			<input type="hidden" name={ field } value={ value }/>
+		}
+		{ children... }
+	</form>
+}
+
+// submitItem is the clickable row inside a menuForm.
+templ submitItem(destructive bool) {
+	if destructive {
+		@dropdownmenu.Item(dropdownmenu.ItemProps{Variant: dropdownmenu.ItemVariantDestructive, Attributes: templ.Attributes{"onclick": "this.closest('form').requestSubmit()"}}) {
+			{ children... }
+		}
+	} else {
+		@dropdownmenu.Item(dropdownmenu.ItemProps{Attributes: templ.Attributes{"onclick": "this.closest('form').requestSubmit()"}}) {
+			{ children... }
+		}
+	}
+}
+
+// checkboxValue is a checkbox that submits an explicit value, for lists such
+// as the assets a payment link accepts.
+templ checkboxValue(name, value, label string, on bool) {
+	<label class="flex items-center gap-2 text-sm">
+		<input type="checkbox" name={ name } value={ value } checked?={ on } class="accent-primary size-4 rounded"/>
+		{ label }
+	</label>
 }

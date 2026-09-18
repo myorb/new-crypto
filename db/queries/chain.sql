@@ -56,12 +56,14 @@ WHERE a.organization_id = $1
 ORDER BY a.created_at DESC
 LIMIT $2 OFFSET $3;
 
+-- Newest first within (network, kind): several hot addresses can exist on one
+-- network, and routing must pick the same one every time.
 -- name: ListPlatformAddresses :many
 SELECT sqlc.embed(a), n.code AS network_code
 FROM addresses a
 JOIN networks n ON n.id = a.network_id
 WHERE a.kind IN ('hot', 'cold', 'fee') AND a.is_active
-ORDER BY n.code, a.kind;
+ORDER BY n.code, a.kind, a.created_at DESC, a.id DESC;
 
 -- name: ListWatchedAddresses :many
 SELECT address, memo FROM addresses
@@ -164,3 +166,24 @@ JOIN transactions tx ON tx.id = t.transaction_id
 WHERE t.address_id = $1
 ORDER BY t.created_at DESC
 LIMIT $2 OFFSET $3;
+
+-- Merchant activity: every transfer touching one of the merchant's addresses.
+-- name: ListOrganizationTransfers :many
+SELECT sqlc.embed(t), sqlc.embed(tx), a.code AS asset_code, a.symbol, a.decimals, n.code AS network_code, n.name AS network_name, n.required_confirmations
+FROM transfers t
+JOIN addresses ad    ON ad.id = t.address_id
+JOIN transactions tx ON tx.id = t.transaction_id
+JOIN assets a        ON a.id = t.asset_id
+JOIN networks n      ON n.id = t.network_id
+WHERE ad.organization_id = $1
+ORDER BY t.created_at DESC
+LIMIT $2 OFFSET $3;
+
+-- name: CountOrganizationTransfers :one
+SELECT count(*)
+FROM transfers t
+JOIN addresses ad ON ad.id = t.address_id
+WHERE ad.organization_id = $1;
+
+-- name: CountOrganizationAddresses :one
+SELECT count(*) FROM addresses WHERE organization_id = $1;

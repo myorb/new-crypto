@@ -238,6 +238,16 @@ templ usageCard(d APIKeysData) {
 }
 
 templ versionCard(d APIKeysData) {
+	{{
+		// The sample request shows a real key prefix when the merchant has one.
+		sampleKey := "sk_" + d.Mode
+		for _, k := range d.Keys {
+			if !k.Revoked {
+				sampleKey = strings.SplitN(k.Token, "_•", 2)[0]
+				break
+			}
+		}
+	}}
 	@card.Card() {
 		@card.Header() {
 			@card.Title() {
@@ -252,7 +262,7 @@ templ versionCard(d APIKeysData) {
 			<div class="bg-muted/50 rounded-xl p-3 font-mono text-xs leading-relaxed">
 				<span class="text-muted-foreground">curl</span> https://api.paychain.dev/v1/payments \
 				<br/>
-				&nbsp;&nbsp;-H <span class="text-muted-foreground">"Authorization: Bearer { strings.SplitN(d.Keys[1].Token, "_•", 2)[0] }_…"</span> \
+				&nbsp;&nbsp;-H <span class="text-muted-foreground">"Authorization: Bearer { sampleKey }_…"</span> \
 				<br/>
 				&nbsp;&nbsp;-H <span class="text-muted-foreground">"PayChain-Version: { d.APIVersion }"</span>
 			</div>

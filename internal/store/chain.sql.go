@@ -13,6 +13,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countOrganizationAddresses = `-- name: CountOrganizationAddresses :one
+SELECT count(*) FROM addresses WHERE organization_id = $1
+`
+
+func (q *Queries) CountOrganizationAddresses(ctx context.Context, organizationID uuid.NullUUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrganizationAddresses, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOrganizationTransfers = `-- name: CountOrganizationTransfers :one
+SELECT count(*)
+FROM transfers t
+JOIN addresses ad ON ad.id = t.address_id
+WHERE ad.organization_id = $1
+`
+
+func (q *Queries) CountOrganizationTransfers(ctx context.Context, organizationID uuid.NullUUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrganizationTransfers, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAddress = `-- name: CreateAddress :one
 
 INSERT INTO addresses (network_id, provider_id, wallet_id, organization_id, address, memo, kind, derivation_index, external_address_id)
@@ -525,6 +550,92 @@ func (q *Queries) ListOrganizationAddresses(ctx context.Context, arg ListOrganiz
 	return items, nil
 }
 
+const listOrganizationTransfers = `-- name: ListOrganizationTransfers :many
+SELECT t.id, t.transaction_id, t.network_id, t.asset_id, t.log_index, t.from_address, t.to_address, t.to_memo, t.amount, t.direction, t.address_id, t.created_at, tx.id, tx.network_id, tx.provider_id, tx.hash, tx.block_number, tx.block_hash, tx.block_timestamp, tx.from_address, tx.to_address, tx.status, tx.confirmations, tx.fee_native, tx.fee_details, tx.external_tx_id, tx.raw, tx.first_seen_at, tx.confirmed_at, a.code AS asset_code, a.symbol, a.decimals, n.code AS network_code, n.name AS network_name, n.required_confirmations
+FROM transfers t
+JOIN addresses ad    ON ad.id = t.address_id
+JOIN transactions tx ON tx.id = t.transaction_id
+JOIN assets a        ON a.id = t.asset_id
+JOIN networks n      ON n.id = t.network_id
+WHERE ad.organization_id = $1
+ORDER BY t.created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListOrganizationTransfersParams struct {
+	OrganizationID uuid.NullUUID
+	Limit          int32
+	Offset         int32
+}
+
+type ListOrganizationTransfersRow struct {
+	Transfer              Transfer
+	Transaction           Transaction
+	AssetCode             string
+	Symbol                string
+	Decimals              int16
+	NetworkCode           string
+	NetworkName           string
+	RequiredConfirmations int32
+}
+
+// Merchant activity: every transfer touching one of the merchant's addresses.
+func (q *Queries) ListOrganizationTransfers(ctx context.Context, arg ListOrganizationTransfersParams) ([]ListOrganizationTransfersRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationTransfers, arg.OrganizationID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrganizationTransfersRow{}
+	for rows.Next() {
+		var i ListOrganizationTransfersRow
+		if err := rows.Scan(
+			&i.Transfer.ID,
+			&i.Transfer.TransactionID,
+			&i.Transfer.NetworkID,
+			&i.Transfer.AssetID,
+			&i.Transfer.LogIndex,
+			&i.Transfer.FromAddress,
+			&i.Transfer.ToAddress,
+			&i.Transfer.ToMemo,
+			&i.Transfer.Amount,
+			&i.Transfer.Direction,
+			&i.Transfer.AddressID,
+			&i.Transfer.CreatedAt,
+			&i.Transaction.ID,
+			&i.Transaction.NetworkID,
+			&i.Transaction.ProviderID,
+			&i.Transaction.Hash,
+			&i.Transaction.BlockNumber,
+			&i.Transaction.BlockHash,
+			&i.Transaction.BlockTimestamp,
+			&i.Transaction.FromAddress,
+			&i.Transaction.ToAddress,
+			&i.Transaction.Status,
+			&i.Transaction.Confirmations,
+			&i.Transaction.FeeNative,
+			&i.Transaction.FeeDetails,
+			&i.Transaction.ExternalTxID,
+			&i.Transaction.Raw,
+			&i.Transaction.FirstSeenAt,
+			&i.Transaction.ConfirmedAt,
+			&i.AssetCode,
+			&i.Symbol,
+			&i.Decimals,
+			&i.NetworkCode,
+			&i.NetworkName,
+			&i.RequiredConfirmations,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingTransactions = `-- name: ListPendingTransactions :many
 SELECT id, network_id, provider_id, hash, block_number, block_hash, block_timestamp, from_address, to_address, status, confirmations, fee_native, fee_details, external_tx_id, raw, first_seen_at, confirmed_at FROM transactions
 WHERE network_id = $1 AND status = 'pending'
@@ -580,7 +691,7 @@ SELECT a.id, a.network_id, a.provider_id, a.wallet_id, a.organization_id, a.addr
 FROM addresses a
 JOIN networks n ON n.id = a.network_id
 WHERE a.kind IN ('hot', 'cold', 'fee') AND a.is_active
-ORDER BY n.code, a.kind
+ORDER BY n.code, a.kind, a.created_at DESC, a.id DESC
 `
 
 type ListPlatformAddressesRow struct {
@@ -588,6 +699,8 @@ type ListPlatformAddressesRow struct {
 	NetworkCode string
 }
 
+// Newest first within (network, kind): several hot addresses can exist on one
+// network, and routing must pick the same one every time.
 func (q *Queries) ListPlatformAddresses(ctx context.Context) ([]ListPlatformAddressesRow, error) {
 	rows, err := q.db.Query(ctx, listPlatformAddresses)
 	if err != nil {

@@ -70,6 +70,46 @@ func (q *Queries) ClaimDueWebhookDeliveries(ctx context.Context, arg ClaimDueWeb
 	return items, nil
 }
 
+const countWebhookDeliveriesByDay = `-- name: CountWebhookDeliveriesByDay :many
+SELECT (d.created_at AT TIME ZONE 'UTC')::date AS day, d.status, count(*) AS count
+FROM webhook_deliveries d
+JOIN webhook_endpoints we ON we.id = d.endpoint_id
+WHERE we.organization_id = $1 AND d.created_at >= $2
+GROUP BY 1, 2
+ORDER BY 1
+`
+
+type CountWebhookDeliveriesByDayParams struct {
+	OrganizationID uuid.UUID
+	CreatedAt      time.Time
+}
+
+type CountWebhookDeliveriesByDayRow struct {
+	Day    pgtype.Date
+	Status WebhookDeliveryStatus
+	Count  int64
+}
+
+func (q *Queries) CountWebhookDeliveriesByDay(ctx context.Context, arg CountWebhookDeliveriesByDayParams) ([]CountWebhookDeliveriesByDayRow, error) {
+	rows, err := q.db.Query(ctx, countWebhookDeliveriesByDay, arg.OrganizationID, arg.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountWebhookDeliveriesByDayRow{}
+	for rows.Next() {
+		var i CountWebhookDeliveriesByDayRow
+		if err := rows.Scan(&i.Day, &i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countWebhookDeliveriesByStatus = `-- name: CountWebhookDeliveriesByStatus :many
 SELECT d.status, count(*) AS count
 FROM webhook_deliveries d
@@ -234,6 +274,34 @@ func (q *Queries) DeleteWebhookEndpoint(ctx context.Context, arg DeleteWebhookEn
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const getEndpointDeliveryStats = `-- name: GetEndpointDeliveryStats :one
+SELECT count(*) AS total,
+       count(*) FILTER (WHERE status = 'succeeded') AS succeeded,
+       count(*) FILTER (WHERE status IN ('failed', 'exhausted')) AS failed,
+       COALESCE(max(last_attempt_at), 'epoch'::timestamptz)::timestamptz AS last_attempt_at
+FROM webhook_deliveries
+WHERE endpoint_id = $1
+`
+
+type GetEndpointDeliveryStatsRow struct {
+	Total         int64
+	Succeeded     int64
+	Failed        int64
+	LastAttemptAt time.Time
+}
+
+func (q *Queries) GetEndpointDeliveryStats(ctx context.Context, endpointID uuid.UUID) (GetEndpointDeliveryStatsRow, error) {
+	row := q.db.QueryRow(ctx, getEndpointDeliveryStats, endpointID)
+	var i GetEndpointDeliveryStatsRow
+	err := row.Scan(
+		&i.Total,
+		&i.Succeeded,
+		&i.Failed,
+		&i.LastAttemptAt,
+	)
+	return i, err
 }
 
 const getEvent = `-- name: GetEvent :one
@@ -616,6 +684,65 @@ func (q *Queries) ListWebhookDeliveriesForEndpoint(ctx context.Context, arg List
 			&i.EventType,
 			&i.ResourceType,
 			&i.ResourceID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWebhookDeliveriesForOrganization = `-- name: ListWebhookDeliveriesForOrganization :many
+
+SELECT d.id, d.endpoint_id, d.event_id, d.status, d.attempts, d.max_attempts, d.next_attempt_at, d.last_attempt_at, d.last_status_code, d.last_error, d.delivered_at, d.created_at, e.type AS event_type, we.url AS endpoint_url
+FROM webhook_deliveries d
+JOIN events e             ON e.id = d.event_id
+JOIN webhook_endpoints we ON we.id = d.endpoint_id
+WHERE we.organization_id = $1
+ORDER BY d.created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListWebhookDeliveriesForOrganizationParams struct {
+	OrganizationID uuid.UUID
+	Limit          int32
+	Offset         int32
+}
+
+type ListWebhookDeliveriesForOrganizationRow struct {
+	WebhookDelivery WebhookDelivery
+	EventType       string
+	EndpointUrl     string
+}
+
+// Dashboard views ------------------------------------------------------------------
+func (q *Queries) ListWebhookDeliveriesForOrganization(ctx context.Context, arg ListWebhookDeliveriesForOrganizationParams) ([]ListWebhookDeliveriesForOrganizationRow, error) {
+	rows, err := q.db.Query(ctx, listWebhookDeliveriesForOrganization, arg.OrganizationID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWebhookDeliveriesForOrganizationRow{}
+	for rows.Next() {
+		var i ListWebhookDeliveriesForOrganizationRow
+		if err := rows.Scan(
+			&i.WebhookDelivery.ID,
+			&i.WebhookDelivery.EndpointID,
+			&i.WebhookDelivery.EventID,
+			&i.WebhookDelivery.Status,
+			&i.WebhookDelivery.Attempts,
+			&i.WebhookDelivery.MaxAttempts,
+			&i.WebhookDelivery.NextAttemptAt,
+			&i.WebhookDelivery.LastAttemptAt,
+			&i.WebhookDelivery.LastStatusCode,
+			&i.WebhookDelivery.LastError,
+			&i.WebhookDelivery.DeliveredAt,
+			&i.WebhookDelivery.CreatedAt,
+			&i.EventType,
+			&i.EndpointUrl,
 		); err != nil {
 			return nil, err
 		}

@@ -1,7 +1,9 @@
-// Package devchain is a chain.Adapter for development and sandbox use. It
+// Package devchain is a chain adapter for development and sandbox use. It
 // derives deterministic addresses that satisfy each network's format rules
-// but correspond to no real key. Never register it in production: the
-// addresses cannot receive or send funds.
+// but correspond to no real key, and it implements scanning and broadcasting
+// against an in-memory fake chain (fakechain.go) whose head advances with the
+// wall clock. Never register it in production: the addresses cannot receive
+// or send funds and the transactions exist only in this process.
 package devchain
 
 import (
@@ -22,18 +24,27 @@ const (
 	bech32Charset  = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 )
 
-// Adapter implements chain.Adapter for one provider code.
+// Adapter implements chain.Adapter, chain.Scanner and chain.Broadcaster for
+// one provider code, against a shared in-memory Chain.
 type Adapter struct {
 	code    string
 	catalog *reference.Catalog
+	chain   *Chain
 }
 
-// Register installs a dev adapter for every given provider code.
-func Register(reg *chain.Registry, catalog *reference.Catalog, codes ...string) {
+// Register installs a dev adapter for every given provider code and returns
+// the fake chain they share. Use the returned Chain to inject deposits
+// (Deposit) and to make transactions fail (Drop, Reject).
+func Register(reg *chain.Registry, catalog *reference.Catalog, opts Options, codes ...string) *Chain {
+	fake := NewChain(opts)
 	for _, c := range codes {
-		reg.Register(&Adapter{code: c, catalog: catalog})
+		reg.Register(&Adapter{code: c, catalog: catalog, chain: fake})
 	}
+	return fake
 }
+
+// Chain returns the fake chain behind this adapter.
+func (a *Adapter) Chain() *Chain { return a.chain }
 
 // Code implements chain.Adapter.
 func (a *Adapter) Code() string { return a.code }

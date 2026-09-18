@@ -146,3 +146,30 @@ LIMIT $1;
 UPDATE provider_webhook_events
 SET processed_at = now(), error = $2
 WHERE id = $1;
+
+-- Dashboard views ------------------------------------------------------------------
+
+-- name: ListWebhookDeliveriesForOrganization :many
+SELECT sqlc.embed(d), e.type AS event_type, we.url AS endpoint_url
+FROM webhook_deliveries d
+JOIN events e             ON e.id = d.event_id
+JOIN webhook_endpoints we ON we.id = d.endpoint_id
+WHERE we.organization_id = $1
+ORDER BY d.created_at DESC
+LIMIT $2 OFFSET $3;
+
+-- name: CountWebhookDeliveriesByDay :many
+SELECT (d.created_at AT TIME ZONE 'UTC')::date AS day, d.status, count(*) AS count
+FROM webhook_deliveries d
+JOIN webhook_endpoints we ON we.id = d.endpoint_id
+WHERE we.organization_id = $1 AND d.created_at >= $2
+GROUP BY 1, 2
+ORDER BY 1;
+
+-- name: GetEndpointDeliveryStats :one
+SELECT count(*) AS total,
+       count(*) FILTER (WHERE status = 'succeeded') AS succeeded,
+       count(*) FILTER (WHERE status IN ('failed', 'exhausted')) AS failed,
+       COALESCE(max(last_attempt_at), 'epoch'::timestamptz)::timestamptz AS last_attempt_at
+FROM webhook_deliveries
+WHERE endpoint_id = $1;

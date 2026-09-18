@@ -562,3 +562,32 @@ func (s *Service) UnlinkIdentity(ctx context.Context, userID, identityID uuid.UU
 	_, err = s.q.DeleteUserIdentity(ctx, store.DeleteUserIdentityParams{ID: identityID, UserID: userID})
 	return err
 }
+
+// Enrolment re-reads an unverified TOTP method so the setup page can be
+// shown again after a wrong code. Verified methods never reveal their seed.
+func (s *Service) Enrolment(ctx context.Context, userID, methodID uuid.UUID) (TOTPEnrolment, error) {
+	if s.keys == nil {
+		return TOTPEnrolment{}, ErrEncryptionMissing
+	}
+	m, err := s.q.GetMFAMethod(ctx, store.GetMFAMethodParams{ID: methodID, UserID: userID})
+	if err != nil {
+		return TOTPEnrolment{}, postgres.MapNotFound(err)
+	}
+	if m.Type != store.MfaMethodTypeTotp || m.VerifiedAt != nil || m.TotpSecretEnc == nil {
+		return TOTPEnrolment{}, ErrInvalidCode
+	}
+	secret, err := s.keys.DecryptString(m.TotpSecretEnc)
+	if err != nil {
+		return TOTPEnrolment{}, err
+	}
+	u, err := s.User(ctx, userID)
+	if err != nil {
+		return TOTPEnrolment{}, err
+	}
+	return TOTPEnrolment{Method: m, Secret: secret, URI: TOTPURI(s.opts.Issuer, u.Email, secret)}, nil
+}
+
+// MarkSessionVerified records that the session passed a second factor.
+func (s *Service) MarkSessionVerified(ctx context.Context, sessionID uuid.UUID) error {
+	return s.q.SetSessionMFAVerified(ctx, sessionID)
+}

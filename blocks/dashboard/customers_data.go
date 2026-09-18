@@ -12,6 +12,7 @@ const (
 // Customer is one row of the customers table.
 type Customer struct {
 	ID       string
+	Ref      string // real id, submitted by the row actions
 	Name     string
 	Email    string
 	Initials string
@@ -30,7 +31,14 @@ type CustomersData struct {
 	Stats     []Stat
 	Customers []Customer
 	Total     int
+	Status    string   // the status filter in force ("all", "active", "blocked")
+	Countries []Option // choices in the "Add customer" dialog
+	Error     string   // result of the last form post
+	Notice    string
 }
+
+// countryChoices is the fallback country list for the add-customer dialog.
+func countryChoices() []Option { return countryOptions }
 
 // CustomersFixture returns the live or sandbox customers.
 func CustomersFixture(sandbox bool) CustomersData {
@@ -60,6 +68,8 @@ func CustomersFixture(sandbox bool) CustomersData {
 		Sandbox:   sandbox,
 		Customers: rows,
 		Total:     1_864,
+		Status:    "all",
+		Countries: countryChoices(),
 		Stats: []Stat{
 			{Label: "Customers", Value: "1,864", Change: "+6.2%", Trend: TrendUp, Hint: "Paid at least once"},
 			{Label: "New this month", Value: "142", Change: "+11.0%", Trend: TrendUp, Hint: "vs. 128 in August"},

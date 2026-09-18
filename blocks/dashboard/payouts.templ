@@ -304,7 +304,11 @@ templ requestPayoutDialog(d PayoutsData) {
 					@field.Label(field.LabelProps{For: "payout-dest"}) {
 						Destination
 					}
-					@fieldSelect("payout-dest", opts, opts[0].Value)
+					if len(opts) > 0 {
+						@fieldSelect("payout-dest", opts, opts[0].Value)
+					} else {
+						<p class="text-muted-foreground text-sm">Add a withdrawal address before requesting a payout.</p>
+					}
 				}
 				@field.Field() {
 					@field.Label(field.LabelProps{For: "payout-amount"}) {

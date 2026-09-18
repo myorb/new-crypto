@@ -22,6 +22,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"templ-app/internal/chain"
+	"templ-app/internal/customers"
 	"templ-app/internal/events"
 	"templ-app/internal/money"
 	"templ-app/internal/org"
@@ -43,6 +44,8 @@ var (
 	ErrOtherOptionChosen = errors.New("checkout: a different asset was already selected for this invoice")
 	ErrExternalIDTaken   = errors.New("checkout: external_id already used by another invoice")
 	ErrNotCancellable    = errors.New("checkout: only unpaid invoices can be cancelled")
+	ErrCustomerBlocked   = errors.New("checkout: customer is blocked")
+	ErrCustomerUnknown   = errors.New("checkout: customer does not belong to this organization")
 )
 
 var currencyRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]{1,31}$`)
@@ -59,32 +62,33 @@ type Options struct {
 
 // Service is the checkout domain.
 type Service struct {
-	q       *store.Queries
-	pool    *pgxpool.Pool
-	catalog *reference.Catalog
-	pricing *pricing.Service
-	chain   *chain.Service
-	events  *events.Service
-	org     *org.Service
-	opts    Options
+	q         *store.Queries
+	pool      *pgxpool.Pool
+	catalog   *reference.Catalog
+	pricing   *pricing.Service
+	chain     *chain.Service
+	events    *events.Service
+	org       *org.Service
+	customers *customers.Service
+	opts      Options
 }
 
 // New builds the service.
-func New(pool *pgxpool.Pool, catalog *reference.Catalog, pr *pricing.Service, ch *chain.Service, ev *events.Service, o *org.Service, opts Options) *Service {
+func New(pool *pgxpool.Pool, catalog *reference.Catalog, pr *pricing.Service, ch *chain.Service, ev *events.Service, o *org.Service, cu *customers.Service, opts Options) *Service {
 	if opts.DefaultTTL == 0 {
 		opts.DefaultTTL = time.Hour
 	}
 	if opts.MaxTTL == 0 {
 		opts.MaxTTL = 7 * 24 * time.Hour
 	}
-	return &Service{q: store.New(pool), pool: pool, catalog: catalog, pricing: pr, chain: ch, events: ev, org: o, opts: opts}
+	return &Service{q: store.New(pool), pool: pool, catalog: catalog, pricing: pr, chain: ch, events: ev, org: o, customers: cu, opts: opts}
 }
 
 // WithTx binds the service and its collaborators to one transaction.
 func (s *Service) WithTx(tx pgx.Tx) *Service {
 	return &Service{
 		q: s.q.WithTx(tx), catalog: s.catalog.WithTx(tx), pricing: s.pricing.WithTx(tx),
-		chain: s.chain.WithTx(tx), events: s.events.WithTx(tx), org: s.org.WithTx(tx), opts: s.opts,
+		chain: s.chain.WithTx(tx), events: s.events.WithTx(tx), org: s.org.WithTx(tx), customers: s.customers.WithTx(tx), opts: s.opts,
 	}
 }
 
@@ -140,6 +144,8 @@ type CreateInput struct {
 	PriceAmount     decimal.Decimal
 	Description     *string
 	CustomerEmail   *string
+	CustomerID      uuid.NullUUID // known payer; otherwise resolved from CustomerEmail
+	PaymentLinkID   uuid.NullUUID // set by OpenLink
 	CallbackURL     *string
 	ReturnURL       *string
 	Metadata        map[string]any
@@ -197,11 +203,15 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Invoice, error) {
 		if err != nil {
 			return err
 		}
+		if err := s.resolveCustomer(ctx, &in); err != nil {
+			return err
+		}
 		inv, err := s.q.CreateInvoice(ctx, store.CreateInvoiceParams{
 			OrganizationID: in.OrganizationID, ExternalID: in.ExternalID, PriceCurrency: in.PriceCurrency,
 			PriceAmount: money.ToNumeric(in.PriceAmount), Description: in.Description, CustomerEmail: in.CustomerEmail,
 			CallbackUrl: in.CallbackURL, ReturnUrl: in.ReturnURL, Metadata: meta,
 			ExpiresAt: time.Now().Add(ttl), CreatedByApiKey: in.CreatedByAPIKey,
+			CustomerID: in.CustomerID, PaymentLinkID: in.PaymentLinkID,
 		})
 		if err != nil {
 			if postgres.IsUniqueViolation(err) {
@@ -230,6 +240,38 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Invoice, error) {
 		return err
 	})
 	return out, err
+}
+
+// resolveCustomer attaches the payer: an explicit CustomerID must belong to
+// the organization, otherwise a CustomerEmail is looked up or created.
+// Blocked customers cannot open invoices.
+func (s *Service) resolveCustomer(ctx context.Context, in *CreateInput) error {
+	var c store.Customer
+	switch {
+	case in.CustomerID.Valid:
+		var err error
+		if c, err = s.customers.Get(ctx, in.OrganizationID, in.CustomerID.UUID); err != nil {
+			if errors.Is(err, customers.ErrNotFound) {
+				return ErrCustomerUnknown
+			}
+			return err
+		}
+	case in.CustomerEmail != nil && *in.CustomerEmail != "":
+		var err error
+		if c, err = s.customers.Ensure(ctx, in.OrganizationID, *in.CustomerEmail); err != nil {
+			return err
+		}
+	default:
+		return nil
+	}
+	if c.Status == store.CustomerStatusBlocked {
+		return ErrCustomerBlocked
+	}
+	in.CustomerID = uuid.NullUUID{UUID: c.ID, Valid: true}
+	if in.CustomerEmail == nil {
+		in.CustomerEmail = c.Email
+	}
+	return nil
 }
 
 // payableAssets decides which assets an invoice offers.
@@ -595,6 +637,11 @@ func (s *Service) ConfirmPayment(ctx context.Context, optionID uuid.UUID) (store
 	if err != nil {
 		return store.Invoice{}, err
 	}
+	if inv.PaymentLinkID.Valid {
+		if _, err := s.q.AddPaymentLinkUse(ctx, inv.PaymentLinkID.UUID); err != nil {
+			return store.Invoice{}, fmt.Errorf("checkout: count payment link use: %w", err)
+		}
+	}
 	full, err := s.load(ctx, inv)
 	if err != nil {
 		return store.Invoice{}, err
@@ -614,6 +661,8 @@ type InvoiceView struct {
 	PriceAmount   string          `json:"price_amount"`
 	Description   *string         `json:"description,omitempty"`
 	CustomerEmail *string         `json:"customer_email,omitempty"`
+	CustomerID    *uuid.UUID      `json:"customer_id,omitempty"`
+	PaymentLinkID *uuid.UUID      `json:"payment_link_id,omitempty"`
 	ReturnURL     *string         `json:"return_url,omitempty"`
 	Metadata      json.RawMessage `json:"metadata"`
 	ExpiresAt     time.Time       `json:"expires_at"`
@@ -647,6 +696,12 @@ func View(i Invoice) InvoiceView {
 	}
 	if len(v.Metadata) == 0 {
 		v.Metadata = json.RawMessage("{}")
+	}
+	if i.CustomerID.Valid {
+		v.CustomerID = &i.CustomerID.UUID
+	}
+	if i.PaymentLinkID.Valid {
+		v.PaymentLinkID = &i.PaymentLinkID.UUID
 	}
 	for k, o := range i.Options {
 		ov := OptionView{

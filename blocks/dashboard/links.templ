@@ -18,7 +18,9 @@ var linkStatusOptions = []option{
 	{Value: "all", Label: "All statuses"},
 	{Value: "active", Label: "Active"},
 	{Value: "paused", Label: "Paused"},
+	{Value: "completed", Label: "Completed"},
 	{Value: "expired", Label: "Expired"},
+	{Value: "archived", Label: "Archived"},
 }
 
 // Links is the payment links page.
@@ -31,6 +33,7 @@ templ Links(d LinksData) {
 			}
 			@createLinkDialog(d)
 		}
+		@pageAlert(d.Error, d.Notice)
 		@statStrip(d.Stats)
 		@card.Card() {
 			@card.Header() {
@@ -42,7 +45,9 @@ templ Links(d LinksData) {
 				}
 				@card.Action(card.ActionProps{Class: "flex flex-wrap gap-2"}) {
 					@searchBox("Search links", "sm:w-56")
-					@filterSelect("Status", linkStatusOptions, "all", "sm:w-36")
+					<form method="get" class="contents" onchange="this.requestSubmit()">
+						@filterSelect("status", linkStatusOptions, statusOr(d.Status), "sm:w-36")
+					</form>
 				}
 			}
 			@card.Content(card.ContentProps{Class: "px-0"}) {
@@ -141,41 +146,62 @@ templ linkRowMenu(l PaymentLink) {
 			<span class="sr-only">Actions</span>
 		}
 		@dropdownmenu.Content(dropdownmenu.ContentProps{Align: dropdownmenu.AlignEnd, Class: "w-48"}) {
-			@dropdownmenu.Item() {
+			@dropdownmenu.Item(dropdownmenu.ItemProps{Attributes: templ.Attributes{"onclick": "navigator.clipboard&&navigator.clipboard.writeText('" + l.URL + "')"}}) {
 				@icon.Copy()
 				Copy link
-			}
-			@dropdownmenu.Item() {
-				@icon.QrCode()
-				Show QR code
 			}
 			@dropdownmenu.Item(dropdownmenu.ItemProps{Href: l.URL, Target: "_blank"}) {
 				@icon.ExternalLink()
 				Open checkout
 			}
 			@dropdownmenu.Separator()
-			@dropdownmenu.Item() {
-				@icon.Pencil()
-				Edit
-			}
 			if l.Status == LinkPaused {
-				@dropdownmenu.Item() {
-					@icon.Play()
-					Resume
+				@menuForm("/dashboard/links/status", l.Ref, "status", "active") {
+					@submitItem(false) {
+						@icon.Play()
+						Resume
+					}
 				}
 			} else if l.Status == LinkActive {
-				@dropdownmenu.Item() {
-					@icon.Pause()
-					Pause
+				@menuForm("/dashboard/links/status", l.Ref, "status", "paused") {
+					@submitItem(false) {
+						@icon.Pause()
+						Pause
+					}
 				}
 			}
 			@dropdownmenu.Separator()
-			@dropdownmenu.Item(dropdownmenu.ItemProps{Variant: dropdownmenu.ItemVariantDestructive}) {
-				@icon.Trash2()
-				Delete
+			@menuForm("/dashboard/links/status", l.Ref, "status", "archived") {
+				@submitItem(true) {
+					@icon.Archive()
+					Archive
+				}
 			}
 		}
 	}
+}
+
+// currenciesOf and assetsOf prefer the handler's catalog and fall back to the
+// fixture lists, so the dialog works in both modes.
+func currenciesOf(d LinksData) []option {
+	if len(d.Currencies) > 0 {
+		return d.Currencies
+	}
+	return currencyOptions
+}
+
+func defaultCurrency(d LinksData) string {
+	if len(d.Currencies) > 0 {
+		return d.Currencies[0].Value
+	}
+	return "USD"
+}
+
+func assetsOf(d LinksData) []option {
+	if len(d.Assets) > 0 {
+		return d.Assets
+	}
+	return assetChoices()
 }
 
 var currencyOptions = []option{
@@ -213,12 +239,12 @@ templ createLinkDialog(d LinksData) {
 					}
 				}
 			}
-			<form class="grid gap-4" onsubmit="return false">
+			<form class="grid gap-4" method="post" action="/dashboard/links">
 				@field.Field() {
 					@field.Label(field.LabelProps{For: "link-name"}) {
 						Name
 					}
-					@input.Input(input.Props{ID: "link-name", Placeholder: "Pro plan · annual", Required: true})
+					@input.Input(input.Props{ID: "link-name", Name: "name", Placeholder: "Pro plan · annual", Required: true})
 					@field.Description() {
 						Shown to the customer on the checkout page.
 					}
@@ -228,53 +254,56 @@ templ createLinkDialog(d LinksData) {
 						@field.Label(field.LabelProps{For: "link-amount"}) {
 							Amount
 						}
-						@input.Input(input.Props{ID: "link-amount", Type: "number", Placeholder: "0.00", Attributes: templ.Attributes{"step": "0.01", "min": "0"}})
+						@input.Input(input.Props{ID: "link-amount", Name: "amount", Type: "number", Placeholder: "0.00", Attributes: templ.Attributes{"step": "0.01", "min": "0"}})
 					}
 					@field.Field() {
 						@field.Label(field.LabelProps{For: "link-currency"}) {
 							Currency
 						}
-						@fieldSelect("link-currency", currencyOptions, "USD")
+						@fieldSelect("currency", currenciesOf(d), defaultCurrency(d))
 					}
 				</div>
-				@checkbox("link-any-amount", "Let the customer choose the amount", false)
+				@checkbox("any_amount", "Let the customer choose the amount", false)
 				@field.Field() {
 					@field.Label() {
 						Accepted assets
 					}
 					<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-						for _, a := range assetOptions[1:] {
-							@checkbox("asset-"+a.Value, a.Value, a.Value == "USDT" || a.Value == "USDC")
+						for _, a := range assetsOf(d) {
+							@checkboxValue("assets", a.Value, a.Label, false)
 						}
 					</div>
+					@field.Description() {
+						Leave every box clear to accept whatever the merchant has enabled.
+					}
 				}
 				@field.Field() {
 					@field.Label(field.LabelProps{For: "link-description"}) {
 						Description
 					}
-					@textarea.Textarea(textarea.Props{ID: "link-description", Placeholder: "Optional note shown under the amount", Rows: 2})
+					@textarea.Textarea(textarea.Props{ID: "link-description", Name: "description", Placeholder: "Optional note shown under the amount", Rows: 2})
 				}
 				<div class="grid gap-4 sm:grid-cols-2">
 					@field.Field() {
 						@field.Label(field.LabelProps{For: "link-expiry"}) {
 							Expires
 						}
-						@fieldSelect("link-expiry", expiryOptions, "never")
+						@fieldSelect("expires", expiryOptions, "never")
 					}
 					@field.Field(field.Props{Class: "justify-end"}) {
-						@checkbox("link-reusable", "Reusable link", true)
-						@checkbox("link-collect-email", "Collect customer email", true)
+						@checkbox("reusable", "Reusable link", true)
+						@checkbox("collect_email", "Collect customer email", true)
 					}
 				</div>
+				@dialog.Footer() {
+					@button.Button(button.Props{Type: button.TypeButton, Variant: button.VariantOutline, Attributes: dialog.Close(ctx)}) {
+						Cancel
+					}
+					@button.Button(button.Props{Type: button.TypeSubmit}) {
+						Create link
+					}
+				}
 			</form>
-			@dialog.Footer() {
-				@button.Button(button.Props{Variant: button.VariantOutline, Attributes: dialog.Close(ctx)}) {
-					Cancel
-				}
-				@button.Button() {
-					Create link
-				}
-			}
 		}
 	}
 }

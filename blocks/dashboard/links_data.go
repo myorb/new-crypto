@@ -12,6 +12,7 @@ const (
 // PaymentLink is one hosted checkout link.
 type PaymentLink struct {
 	ID       string
+	Ref      string // real id, submitted by the row actions
 	Name     string
 	URL      string
 	Amount   string // "" for customer-chosen amounts
@@ -35,11 +36,28 @@ func (l PaymentLink) Conversion() float64 {
 
 // LinksData is everything the payment links page renders.
 type LinksData struct {
-	Sandbox bool
-	Stats   []Stat
-	Links   []PaymentLink
-	Total   int
-	Host    string
+	Sandbox    bool
+	Stats      []Stat
+	Links      []PaymentLink
+	Total      int
+	Host       string
+	Status     string   // the status filter in force ("all", "active", ...)
+	Currencies []Option // pricing currencies offered in the create dialog
+	Assets     []Option // assets a link can accept; Value is the asset id
+	Error      string   // result of the last form post
+	Notice     string
+}
+
+// currencyChoices and assetChoices are the fallbacks the fixtures use when a
+// handler passes no catalog of its own.
+func currencyChoices() []Option { return currencyOptions }
+
+func assetChoices() []Option {
+	out := make([]Option, 0, len(assetOptions)-1)
+	for _, a := range assetOptions[1:] {
+		out = append(out, Option{Value: a.Value, Label: a.Label})
+	}
+	return out
 }
 
 // LinksFixture returns the live or sandbox payment links.
@@ -67,10 +85,13 @@ func LinksFixture(sandbox bool) LinksData {
 		}
 	}
 	d := LinksData{
-		Sandbox: sandbox,
-		Links:   links,
-		Total:   38,
-		Host:    host,
+		Sandbox:    sandbox,
+		Links:      links,
+		Total:      38,
+		Host:       host,
+		Status:     "all",
+		Currencies: currencyChoices(),
+		Assets:     assetChoices(),
 		Stats: []Stat{
 			{Label: "Active links", Value: "23", Change: "+3", Trend: TrendUp, Hint: "5 expire this month"},
 			{Label: "Paid via links", Value: "2,471", Change: "+14.2%", Trend: TrendUp, Hint: "Last 30 days"},

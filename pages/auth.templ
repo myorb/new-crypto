@@ -5,35 +5,38 @@ import (
 	"templ-app/layouts"
 )
 
-// Login is the sign-in screen.
-templ Login() {
+// Login is the sign-in screen. errMsg and notice come from the handler.
+templ Login(errMsg, notice, next string) {
 	@layouts.Auth("Sign in") {
-		@auth.Login()
+		@auth.Login(errMsg, notice, next)
 	}
 }
 
 // Signup is the account creation screen.
-templ Signup() {
+templ Signup(errMsg string) {
 	@layouts.Auth("Create account") {
-		@auth.Signup()
+		@auth.Signup(errMsg)
 	}
 }
 
-// Verify is the two-factor step. method is "app" (default) or "sms".
-templ Verify(method string) {
-	{{ v := auth.VerifyFixture() }}
-	if method == "sms" {
-		{{ v.Method = "sms" }}
-	}
+// Verify is the two-factor step.
+templ Verify(v auth.Verify2FA) {
 	@layouts.Auth("Two-factor authentication") {
 		@auth.Verify(v)
 	}
 }
 
 // Setup2FA is the authenticator enrolment screen.
-templ Setup2FA() {
+templ Setup2FA(s auth.Setup2FA) {
 	@layouts.Auth("Set up two-factor authentication") {
-		@auth.Setup(auth.SetupFixture())
+		@auth.Setup(s)
+	}
+}
+
+// RecoveryCodes shows new recovery codes once.
+templ RecoveryCodes(codes []string, next string) {
+	@layouts.Auth("Recovery codes") {
+		@auth.RecoveryCodes(codes, next)
 	}
 }
 

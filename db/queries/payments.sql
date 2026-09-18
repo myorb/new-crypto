@@ -74,3 +74,41 @@ UPDATE payments
 SET status = 'reverted'
 WHERE id = $1 AND status IN ('detected', 'confirmed')
 RETURNING *;
+
+-- Dashboard aggregates ----------------------------------------------------------
+
+-- name: SumPaymentsByDay :many
+SELECT (created_at AT TIME ZONE 'UTC')::date AS day, asset_id, count(*) AS count, COALESCE(SUM(amount), 0)::crypto_amount AS amount
+FROM payments
+WHERE organization_id = $1 AND status IN ('confirmed', 'credited') AND created_at >= $2
+GROUP BY 1, 2
+ORDER BY 1;
+
+-- name: CountPaymentsByDayAndStatus :many
+SELECT (created_at AT TIME ZONE 'UTC')::date AS day, status, count(*) AS count
+FROM payments
+WHERE organization_id = $1 AND created_at >= $2
+GROUP BY 1, 2
+ORDER BY 1;
+
+-- name: SumPaymentsByAsset :many
+SELECT p.asset_id, a.code AS asset_code, a.symbol, a.name AS asset_name, count(*) AS count,
+       COALESCE(SUM(p.amount), 0)::crypto_amount AS amount,
+       COALESCE(SUM(p.fee_amount + p.spread_amount + p.network_fee_amount), 0)::crypto_amount AS fees
+FROM payments p
+JOIN assets a ON a.id = p.asset_id
+WHERE p.organization_id = $1 AND p.status IN ('confirmed', 'credited') AND p.created_at >= $2
+GROUP BY p.asset_id, a.code, a.symbol, a.name
+ORDER BY amount DESC;
+
+-- name: CountPaymentsByNetwork :many
+SELECT n.code AS network_code, n.name AS network_name, count(*) AS count
+FROM payments p
+JOIN assets a   ON a.id = p.asset_id
+JOIN networks n ON n.id = a.network_id
+WHERE p.organization_id = $1 AND p.created_at >= $2
+GROUP BY n.code, n.name
+ORDER BY count DESC;
+
+-- name: CountPaymentsSince :one
+SELECT count(*) FROM payments WHERE organization_id = $1 AND created_at >= $2;

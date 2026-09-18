@@ -48,6 +48,86 @@ func (q *Queries) ConfirmPayment(ctx context.Context, id uuid.UUID) (Payment, er
 	return i, err
 }
 
+const countPaymentsByDayAndStatus = `-- name: CountPaymentsByDayAndStatus :many
+SELECT (created_at AT TIME ZONE 'UTC')::date AS day, status, count(*) AS count
+FROM payments
+WHERE organization_id = $1 AND created_at >= $2
+GROUP BY 1, 2
+ORDER BY 1
+`
+
+type CountPaymentsByDayAndStatusParams struct {
+	OrganizationID uuid.UUID
+	CreatedAt      time.Time
+}
+
+type CountPaymentsByDayAndStatusRow struct {
+	Day    pgtype.Date
+	Status PaymentStatus
+	Count  int64
+}
+
+func (q *Queries) CountPaymentsByDayAndStatus(ctx context.Context, arg CountPaymentsByDayAndStatusParams) ([]CountPaymentsByDayAndStatusRow, error) {
+	rows, err := q.db.Query(ctx, countPaymentsByDayAndStatus, arg.OrganizationID, arg.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountPaymentsByDayAndStatusRow{}
+	for rows.Next() {
+		var i CountPaymentsByDayAndStatusRow
+		if err := rows.Scan(&i.Day, &i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const countPaymentsByNetwork = `-- name: CountPaymentsByNetwork :many
+SELECT n.code AS network_code, n.name AS network_name, count(*) AS count
+FROM payments p
+JOIN assets a   ON a.id = p.asset_id
+JOIN networks n ON n.id = a.network_id
+WHERE p.organization_id = $1 AND p.created_at >= $2
+GROUP BY n.code, n.name
+ORDER BY count DESC
+`
+
+type CountPaymentsByNetworkParams struct {
+	OrganizationID uuid.UUID
+	CreatedAt      time.Time
+}
+
+type CountPaymentsByNetworkRow struct {
+	NetworkCode string
+	NetworkName string
+	Count       int64
+}
+
+func (q *Queries) CountPaymentsByNetwork(ctx context.Context, arg CountPaymentsByNetworkParams) ([]CountPaymentsByNetworkRow, error) {
+	rows, err := q.db.Query(ctx, countPaymentsByNetwork, arg.OrganizationID, arg.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountPaymentsByNetworkRow{}
+	for rows.Next() {
+		var i CountPaymentsByNetworkRow
+		if err := rows.Scan(&i.NetworkCode, &i.NetworkName, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countPaymentsByStatus = `-- name: CountPaymentsByStatus :many
 SELECT status, count(*) AS count
 FROM payments
@@ -78,6 +158,22 @@ func (q *Queries) CountPaymentsByStatus(ctx context.Context, organizationID uuid
 		return nil, err
 	}
 	return items, nil
+}
+
+const countPaymentsSince = `-- name: CountPaymentsSince :one
+SELECT count(*) FROM payments WHERE organization_id = $1 AND created_at >= $2
+`
+
+type CountPaymentsSinceParams struct {
+	OrganizationID uuid.UUID
+	CreatedAt      time.Time
+}
+
+func (q *Queries) CountPaymentsSince(ctx context.Context, arg CountPaymentsSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPaymentsSince, arg.OrganizationID, arg.CreatedAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createPayment = `-- name: CreatePayment :one
@@ -548,4 +644,105 @@ func (q *Queries) SumCreditedPayments(ctx context.Context, arg SumCreditedPaymen
 	var i SumCreditedPaymentsRow
 	err := row.Scan(&i.Gross, &i.Fees)
 	return i, err
+}
+
+const sumPaymentsByAsset = `-- name: SumPaymentsByAsset :many
+SELECT p.asset_id, a.code AS asset_code, a.symbol, a.name AS asset_name, count(*) AS count,
+       COALESCE(SUM(p.amount), 0)::crypto_amount AS amount,
+       COALESCE(SUM(p.fee_amount + p.spread_amount + p.network_fee_amount), 0)::crypto_amount AS fees
+FROM payments p
+JOIN assets a ON a.id = p.asset_id
+WHERE p.organization_id = $1 AND p.status IN ('confirmed', 'credited') AND p.created_at >= $2
+GROUP BY p.asset_id, a.code, a.symbol, a.name
+ORDER BY amount DESC
+`
+
+type SumPaymentsByAssetParams struct {
+	OrganizationID uuid.UUID
+	CreatedAt      time.Time
+}
+
+type SumPaymentsByAssetRow struct {
+	AssetID   int16
+	AssetCode string
+	Symbol    string
+	AssetName string
+	Count     int64
+	Amount    pgtype.Numeric
+	Fees      pgtype.Numeric
+}
+
+func (q *Queries) SumPaymentsByAsset(ctx context.Context, arg SumPaymentsByAssetParams) ([]SumPaymentsByAssetRow, error) {
+	rows, err := q.db.Query(ctx, sumPaymentsByAsset, arg.OrganizationID, arg.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SumPaymentsByAssetRow{}
+	for rows.Next() {
+		var i SumPaymentsByAssetRow
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.AssetCode,
+			&i.Symbol,
+			&i.AssetName,
+			&i.Count,
+			&i.Amount,
+			&i.Fees,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const sumPaymentsByDay = `-- name: SumPaymentsByDay :many
+
+SELECT (created_at AT TIME ZONE 'UTC')::date AS day, asset_id, count(*) AS count, COALESCE(SUM(amount), 0)::crypto_amount AS amount
+FROM payments
+WHERE organization_id = $1 AND status IN ('confirmed', 'credited') AND created_at >= $2
+GROUP BY 1, 2
+ORDER BY 1
+`
+
+type SumPaymentsByDayParams struct {
+	OrganizationID uuid.UUID
+	CreatedAt      time.Time
+}
+
+type SumPaymentsByDayRow struct {
+	Day     pgtype.Date
+	AssetID int16
+	Count   int64
+	Amount  pgtype.Numeric
+}
+
+// Dashboard aggregates ----------------------------------------------------------
+func (q *Queries) SumPaymentsByDay(ctx context.Context, arg SumPaymentsByDayParams) ([]SumPaymentsByDayRow, error) {
+	rows, err := q.db.Query(ctx, sumPaymentsByDay, arg.OrganizationID, arg.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SumPaymentsByDayRow{}
+	for rows.Next() {
+		var i SumPaymentsByDayRow
+		if err := rows.Scan(
+			&i.Day,
+			&i.AssetID,
+			&i.Count,
+			&i.Amount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

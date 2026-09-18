@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"templ-app/internal/chain"
 	"templ-app/internal/chain/devchain"
 	"templ-app/internal/checkout"
+	"templ-app/internal/customers"
 	"templ-app/internal/events"
 	"templ-app/internal/identity"
 	"templ-app/internal/ledger"
@@ -55,11 +57,20 @@ type Config struct {
 	// DevChainAdapter registers fake address derivation for every seeded
 	// provider. Refused when Env is production.
 	DevChainAdapter bool // DEV_CHAIN_ADAPTER=true
+	// DevChainBlockTime is how fast the fake chain's head advances. A network
+	// confirms after required_confirmations blocks.
+	DevChainBlockTime time.Duration // DEV_CHAIN_BLOCK_TIME, default 1s
 	// WebhookAllowPrivate turns off the SSRF guard so local endpoints work.
 	WebhookAllowPrivate bool // WEBHOOK_ALLOW_PRIVATE=true
 	// RequireWithdrawalWhitelist refuses payouts to unsaved addresses.
 	RequireWithdrawalWhitelist bool   // REQUIRE_WITHDRAWAL_WHITELIST=true
 	Issuer                     string // TOTP issuer name; default "Payments"
+
+	// DevSeed creates a demo user, merchant, wallets and placeholder rates at
+	// startup (development only; needs DevChainAdapter).
+	DevSeed         bool   // DEV_SEED=true
+	DevSeedEmail    string // DEV_SEED_EMAIL, default demo@example.com
+	DevSeedPassword string // DEV_SEED_PASSWORD, default demo-password-123
 
 	// WebhookTLS is only set by tests to trust an httptest certificate.
 	WebhookTLS *tls.Config
@@ -80,10 +91,21 @@ func ConfigFromEnv() Config {
 		MaxRateAge:                 envDuration("MAX_RATE_AGE", 10*time.Minute),
 		WebhookTimeout:             envDuration("WEBHOOK_TIMEOUT", 10*time.Second),
 		DevChainAdapter:            envBool("DEV_CHAIN_ADAPTER"),
+		DevChainBlockTime:          envDuration("DEV_CHAIN_BLOCK_TIME", time.Second),
 		WebhookAllowPrivate:        envBool("WEBHOOK_ALLOW_PRIVATE"),
 		RequireWithdrawalWhitelist: envBool("REQUIRE_WITHDRAWAL_WHITELIST"),
 		Issuer:                     os.Getenv("TOTP_ISSUER"),
+		DevSeed:                    envBool("DEV_SEED"),
+		DevSeedEmail:               envOr("DEV_SEED_EMAIL", "demo@example.com"),
+		DevSeedPassword:            envOr("DEV_SEED_PASSWORD", "demo-password-123"),
 	}
+}
+
+func envOr(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
 }
 
 func envDuration(key string, def time.Duration) time.Duration {
@@ -115,11 +137,15 @@ type App struct {
 	Pricing  *pricing.Service
 	Chain    *chain.Service
 	Adapters *chain.Registry
-	Events   *events.Service
-	Checkout *checkout.Service
-	Payments *payments.Service
-	Payouts  *payouts.Service
-	Treasury *treasury.Service
+	// DevChain is the in-memory chain behind the dev adapters; nil unless
+	// DevChainAdapter is set. Inject deposits and failures through it.
+	DevChain  *devchain.Chain
+	Events    *events.Service
+	Customers *customers.Service
+	Checkout  *checkout.Service
+	Payments  *payments.Service
+	Payouts   *payouts.Service
+	Treasury  *treasury.Service
 }
 
 // New connects to the database and builds the service graph. The encryption
@@ -194,14 +220,23 @@ func Build(ctx context.Context, cfg Config, log *slog.Logger, pool *pgxpool.Pool
 				}
 			}
 		}
+		list := make([]string, 0, len(codes))
 		for code := range codes {
-			devchain.Register(a.Adapters, a.Catalog, code)
+			list = append(list, code)
 		}
-		log.Warn("dev chain adapter enabled: derived addresses are not real", "providers", len(codes))
+		sort.Strings(list)
+		a.DevChain = devchain.Register(a.Adapters, a.Catalog, devchain.Options{BlockTime: cfg.DevChainBlockTime}, list...)
+		log.Warn("dev chain adapter enabled: addresses and transactions are not real", "providers", len(list), "block_time", cfg.DevChainBlockTime)
 	}
 	a.Chain = chain.New(pool, a.Catalog, a.Adapters, log)
+	if a.DevChain != nil {
+		// The fake chain restarts at genesis while scanner cursors persist, so
+		// lift its head above whatever was already scanned.
+		a.DevChain.StartAbove(highestCursor(ctx, a))
+	}
 	a.Events = events.New(pool, keys, events.Options{Timeout: cfg.WebhookTimeout, AllowPrivate: cfg.WebhookAllowPrivate, TLSClientConfig: cfg.WebhookTLS})
-	a.Checkout = checkout.New(pool, a.Catalog, a.Pricing, a.Chain, a.Events, a.Org, checkout.Options{DefaultTTL: cfg.InvoiceTTL, AllowPrivate: cfg.WebhookAllowPrivate})
+	a.Customers = customers.New(pool)
+	a.Checkout = checkout.New(pool, a.Catalog, a.Pricing, a.Chain, a.Events, a.Org, a.Customers, checkout.Options{DefaultTTL: cfg.InvoiceTTL, AllowPrivate: cfg.WebhookAllowPrivate})
 	a.Payments = payments.New(pool, a.Catalog, a.Pricing, a.Ledger, a.Checkout, a.Chain, a.Events, log)
 	a.Payouts = payouts.New(pool, a.Catalog, a.Pricing, a.Ledger, a.Chain, a.Events, payouts.Options{RequireWhitelist: cfg.RequireWithdrawalWhitelist}, log)
 	a.Treasury = treasury.New(pool, a.Catalog, a.Chain, a.Ledger, log)
@@ -221,4 +256,21 @@ func (a *App) Ping(ctx context.Context) error {
 		return fmt.Errorf("app: no database")
 	}
 	return a.Pool.Ping(ctx)
+}
+
+// highestCursor is the furthest any scanner has got, across providers and
+// networks. Used to keep the dev chain's head ahead of stored cursors.
+func highestCursor(ctx context.Context, a *App) int64 {
+	targets, err := a.Chain.ScanTargets(ctx)
+	if err != nil {
+		return 0
+	}
+	var high int64
+	for _, t := range targets {
+		cur, err := a.Chain.Cursor(ctx, t.Provider.ID, t.Network.ID)
+		if err == nil && cur.LastScannedBlock > high {
+			high = cur.LastScannedBlock
+		}
+	}
+	return high
 }

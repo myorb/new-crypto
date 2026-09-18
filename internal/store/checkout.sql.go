@@ -99,11 +99,27 @@ func (q *Queries) CountInvoicesByStatus(ctx context.Context, organizationID uuid
 	return items, nil
 }
 
+const countInvoicesSince = `-- name: CountInvoicesSince :one
+SELECT count(*) FROM invoices WHERE organization_id = $1 AND created_at >= $2
+`
+
+type CountInvoicesSinceParams struct {
+	OrganizationID uuid.UUID
+	CreatedAt      time.Time
+}
+
+func (q *Queries) CountInvoicesSince(ctx context.Context, arg CountInvoicesSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countInvoicesSince, arg.OrganizationID, arg.CreatedAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createInvoice = `-- name: CreateInvoice :one
 
-INSERT INTO invoices (organization_id, external_id, price_currency, price_amount, description, customer_email, callback_url, return_url, metadata, expires_at, created_by_api_key)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at
+INSERT INTO invoices (organization_id, external_id, price_currency, price_amount, description, customer_email, callback_url, return_url, metadata, expires_at, created_by_api_key, customer_id, payment_link_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+RETURNING id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at, customer_id, payment_link_id
 `
 
 type CreateInvoiceParams struct {
@@ -118,6 +134,8 @@ type CreateInvoiceParams struct {
 	Metadata        []byte
 	ExpiresAt       time.Time
 	CreatedByApiKey uuid.NullUUID
+	CustomerID      uuid.NullUUID
+	PaymentLinkID   uuid.NullUUID
 }
 
 // Checkout: invoices and the payment options quoted on them.
@@ -135,6 +153,8 @@ func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (I
 		arg.Metadata,
 		arg.ExpiresAt,
 		arg.CreatedByApiKey,
+		arg.CustomerID,
+		arg.PaymentLinkID,
 	)
 	var i Invoice
 	err := row.Scan(
@@ -156,6 +176,8 @@ func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (I
 		&i.CreatedByApiKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomerID,
+		&i.PaymentLinkID,
 	)
 	return i, err
 }
@@ -217,7 +239,7 @@ func (q *Queries) CreateInvoicePaymentOption(ctx context.Context, arg CreateInvo
 const expireInvoices = `-- name: ExpireInvoices :many
 UPDATE invoices SET status = 'expired'
 WHERE status = 'new' AND expires_at <= now()
-RETURNING id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at
+RETURNING id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at, customer_id, payment_link_id
 `
 
 func (q *Queries) ExpireInvoices(ctx context.Context) ([]Invoice, error) {
@@ -248,6 +270,8 @@ func (q *Queries) ExpireInvoices(ctx context.Context) ([]Invoice, error) {
 			&i.CreatedByApiKey,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CustomerID,
+			&i.PaymentLinkID,
 		); err != nil {
 			return nil, err
 		}
@@ -274,7 +298,7 @@ func (q *Queries) ExtendInvoiceExpiry(ctx context.Context, arg ExtendInvoiceExpi
 }
 
 const findOpenInvoiceOptionByAddress = `-- name: FindOpenInvoiceOptionByAddress :one
-SELECT o.id, o.invoice_id, o.asset_id, o.provider_id, o.address_id, o.memo, o.amount_due, o.amount_paid, o.exchange_rate, o.source_rate, o.spread_bps, o.rate_id, o.rate_locked_until, o.is_selected, o.selected_at, o.created_at, i.id, i.organization_id, i.external_id, i.price_currency, i.price_amount, i.status, i.description, i.customer_email, i.callback_url, i.return_url, i.metadata, i.expires_at, i.paid_at, i.confirmed_at, i.completed_at, i.created_by_api_key, i.created_at, i.updated_at
+SELECT o.id, o.invoice_id, o.asset_id, o.provider_id, o.address_id, o.memo, o.amount_due, o.amount_paid, o.exchange_rate, o.source_rate, o.spread_bps, o.rate_id, o.rate_locked_until, o.is_selected, o.selected_at, o.created_at, i.id, i.organization_id, i.external_id, i.price_currency, i.price_amount, i.status, i.description, i.customer_email, i.callback_url, i.return_url, i.metadata, i.expires_at, i.paid_at, i.confirmed_at, i.completed_at, i.created_by_api_key, i.created_at, i.updated_at, i.customer_id, i.payment_link_id
 FROM invoice_payment_options o
 JOIN invoices i ON i.id = o.invoice_id
 WHERE o.address_id = $1
@@ -333,12 +357,14 @@ func (q *Queries) FindOpenInvoiceOptionByAddress(ctx context.Context, arg FindOp
 		&i.Invoice.CreatedByApiKey,
 		&i.Invoice.CreatedAt,
 		&i.Invoice.UpdatedAt,
+		&i.Invoice.CustomerID,
+		&i.Invoice.PaymentLinkID,
 	)
 	return i, err
 }
 
 const getInvoice = `-- name: GetInvoice :one
-SELECT id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at FROM invoices WHERE id = $1
+SELECT id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at, customer_id, payment_link_id FROM invoices WHERE id = $1
 `
 
 func (q *Queries) GetInvoice(ctx context.Context, id uuid.UUID) (Invoice, error) {
@@ -363,12 +389,14 @@ func (q *Queries) GetInvoice(ctx context.Context, id uuid.UUID) (Invoice, error)
 		&i.CreatedByApiKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomerID,
+		&i.PaymentLinkID,
 	)
 	return i, err
 }
 
 const getInvoiceByExternalID = `-- name: GetInvoiceByExternalID :one
-SELECT id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at FROM invoices WHERE organization_id = $1 AND external_id = $2
+SELECT id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at, customer_id, payment_link_id FROM invoices WHERE organization_id = $1 AND external_id = $2
 `
 
 type GetInvoiceByExternalIDParams struct {
@@ -398,12 +426,14 @@ func (q *Queries) GetInvoiceByExternalID(ctx context.Context, arg GetInvoiceByEx
 		&i.CreatedByApiKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomerID,
+		&i.PaymentLinkID,
 	)
 	return i, err
 }
 
 const getInvoiceForOrganization = `-- name: GetInvoiceForOrganization :one
-SELECT id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at FROM invoices WHERE id = $1 AND organization_id = $2
+SELECT id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at, customer_id, payment_link_id FROM invoices WHERE id = $1 AND organization_id = $2
 `
 
 type GetInvoiceForOrganizationParams struct {
@@ -433,6 +463,8 @@ func (q *Queries) GetInvoiceForOrganization(ctx context.Context, arg GetInvoiceF
 		&i.CreatedByApiKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomerID,
+		&i.PaymentLinkID,
 	)
 	return i, err
 }
@@ -601,7 +633,7 @@ func (q *Queries) ListInvoicePaymentOptions(ctx context.Context, invoiceID uuid.
 }
 
 const listInvoices = `-- name: ListInvoices :many
-SELECT id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at FROM invoices
+SELECT id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at, customer_id, payment_link_id FROM invoices
 WHERE organization_id = $1
   AND (status = $4 OR $4 IS NULL)
 ORDER BY created_at DESC
@@ -648,6 +680,8 @@ func (q *Queries) ListInvoices(ctx context.Context, arg ListInvoicesParams) ([]I
 			&i.CreatedByApiKey,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CustomerID,
+			&i.PaymentLinkID,
 		); err != nil {
 			return nil, err
 		}
@@ -762,7 +796,7 @@ SET status       = $2::invoice_status,
     confirmed_at = CASE WHEN $2::invoice_status IN ('confirmed', 'completed')         THEN COALESCE(confirmed_at, now()) ELSE confirmed_at END,
     completed_at = CASE WHEN $2::invoice_status = 'completed'                          THEN COALESCE(completed_at, now()) ELSE completed_at END
 WHERE id = $1
-RETURNING id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at
+RETURNING id, organization_id, external_id, price_currency, price_amount, status, description, customer_email, callback_url, return_url, metadata, expires_at, paid_at, confirmed_at, completed_at, created_by_api_key, created_at, updated_at, customer_id, payment_link_id
 `
 
 type SetInvoiceStatusParams struct {
@@ -792,6 +826,8 @@ func (q *Queries) SetInvoiceStatus(ctx context.Context, arg SetInvoiceStatusPara
 		&i.CreatedByApiKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomerID,
+		&i.PaymentLinkID,
 	)
 	return i, err
 }

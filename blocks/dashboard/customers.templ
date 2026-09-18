@@ -16,8 +16,15 @@ import (
 var customerStatusOptions = []option{
 	{Value: "all", Label: "All statuses"},
 	{Value: "active", Label: "Active"},
-	{Value: "new", Label: "New"},
 	{Value: "blocked", Label: "Blocked"},
+}
+
+// statusOr defaults an empty filter to "all".
+func statusOr(s string) string {
+	if s == "" {
+		return "all"
+	}
+	return s
 }
 
 var sortOptions = []option{
@@ -35,8 +42,9 @@ templ Customers(d CustomersData) {
 				@icon.Download(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
 				Export CSV
 			}
-			@addCustomerDialog()
+			@addCustomerDialog(d)
 		}
+		@pageAlert(d.Error, d.Notice)
 		@statStrip(d.Stats)
 		@card.Card() {
 			@card.Header() {
@@ -48,7 +56,11 @@ templ Customers(d CustomersData) {
 				}
 				@card.Action(card.ActionProps{Class: "flex flex-wrap gap-2"}) {
 					@searchBox("Search name, email or ID", "sm:w-64")
-					@filterSelect("Status", customerStatusOptions, "all", "sm:w-32")
+					// The select dispatches a bubbling change event, so picking a
+					// status reloads the page with ?status=… and no extra button.
+					<form method="get" class="contents" onchange="this.requestSubmit()">
+						@filterSelect("status", customerStatusOptions, statusOr(d.Status), "sm:w-32")
+					</form>
 					@filterSelect("Sort", sortOptions, "recent", "sm:w-40")
 				}
 			}
@@ -142,14 +154,18 @@ templ Customers(d CustomersData) {
 											}
 											@dropdownmenu.Separator()
 											if c.Status == CustomerBlocked {
-												@dropdownmenu.Item() {
-													@icon.CircleCheck()
-													Unblock
+												@menuForm("/dashboard/customers/status", c.Ref, "status", "active") {
+													@submitItem(false) {
+														@icon.CircleCheck()
+														Unblock
+													}
 												}
 											} else {
-												@dropdownmenu.Item(dropdownmenu.ItemProps{Variant: dropdownmenu.ItemVariantDestructive}) {
-													@icon.Ban()
-													Block customer
+												@menuForm("/dashboard/customers/status", c.Ref, "status", "blocked") {
+													@submitItem(true) {
+														@icon.Ban()
+														Block customer
+													}
 												}
 											}
 										}
@@ -165,6 +181,16 @@ templ Customers(d CustomersData) {
 	</div>
 }
 
+// countriesOf prefers the handler's country list and falls back to the
+// fixture one, with an empty first entry so "no country" is possible.
+func countriesOf(d CustomersData) []option {
+	list := d.Countries
+	if len(list) == 0 {
+		list = countryOptions
+	}
+	return append([]option{{Value: "", Label: "Not set"}}, list...)
+}
+
 var countryOptions = []option{
 	{Value: "DE", Label: "Germany"},
 	{Value: "US", Label: "United States"},
@@ -175,7 +201,7 @@ var countryOptions = []option{
 	{Value: "other", Label: "Other"},
 }
 
-templ addCustomerDialog() {
+templ addCustomerDialog(d CustomersData) {
 	@dialog.Dialog() {
 		@button.Button(button.Props{Size: button.SizeSm, Attributes: dialog.Trigger(ctx)}) {
 			@icon.UserPlus(icon.Props{Attributes: templ.Attributes{"data-icon": "inline-start"}})
@@ -190,18 +216,18 @@ templ addCustomerDialog() {
 					Customers are also created automatically the first time they pay.
 				}
 			}
-			<form class="grid gap-4" onsubmit="return false">
+			<form class="grid gap-4" method="post" action="/dashboard/customers">
 				@field.Field() {
 					@field.Label(field.LabelProps{For: "cus-name"}) {
 						Name or company
 					}
-					@input.Input(input.Props{ID: "cus-name", Placeholder: "Acme Retail GmbH", Required: true})
+					@input.Input(input.Props{ID: "cus-name", Name: "name", Placeholder: "Acme Retail GmbH", Required: true})
 				}
 				@field.Field() {
 					@field.Label(field.LabelProps{For: "cus-email"}) {
 						Email
 					}
-					@input.Input(input.Props{ID: "cus-email", Type: "email", Placeholder: "billing@acme.com", Required: true})
+					@input.Input(input.Props{ID: "cus-email", Name: "email", Type: "email", Placeholder: "billing@acme.com", Required: true})
 					@field.Description() {
 						Receipts and payment links are sent here.
 					}
@@ -210,23 +236,23 @@ templ addCustomerDialog() {
 					@field.Label(field.LabelProps{For: "cus-country"}) {
 						Country
 					}
-					@fieldSelect("cus-country", countryOptions, "DE")
+					@fieldSelect("country", countriesOf(d), "")
 				}
 				@field.Field() {
 					@field.Label(field.LabelProps{For: "cus-ref"}) {
 						Your reference
 					}
-					@input.Input(input.Props{ID: "cus-ref", Placeholder: "Optional internal ID"})
+					@input.Input(input.Props{ID: "cus-ref", Name: "external_id", Placeholder: "Optional internal ID"})
+				}
+				@dialog.Footer() {
+					@button.Button(button.Props{Type: button.TypeButton, Variant: button.VariantOutline, Attributes: dialog.Close(ctx)}) {
+						Cancel
+					}
+					@button.Button(button.Props{Type: button.TypeSubmit}) {
+						Add customer
+					}
 				}
 			</form>
-			@dialog.Footer() {
-				@button.Button(button.Props{Variant: button.VariantOutline, Attributes: dialog.Close(ctx)}) {
-					Cancel
-				}
-				@button.Button() {
-					Add customer
-				}
-			}
 		}
 	}
 }

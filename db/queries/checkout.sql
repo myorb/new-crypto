@@ -2,8 +2,8 @@
 -- Owned by internal/checkout.
 
 -- name: CreateInvoice :one
-INSERT INTO invoices (organization_id, external_id, price_currency, price_amount, description, customer_email, callback_url, return_url, metadata, expires_at, created_by_api_key)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+INSERT INTO invoices (organization_id, external_id, price_currency, price_amount, description, customer_email, callback_url, return_url, metadata, expires_at, created_by_api_key, customer_id, payment_link_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING *;
 
 -- name: GetInvoice :one
@@ -106,3 +106,6 @@ WHERE o.address_id = $1
   AND i.status IN ('new', 'partial', 'paid', 'confirmed', 'expired')
 ORDER BY i.created_at DESC
 LIMIT 1;
+
+-- name: CountInvoicesSince :one
+SELECT count(*) FROM invoices WHERE organization_id = $1 AND created_at >= $2;

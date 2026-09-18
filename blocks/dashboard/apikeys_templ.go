@@ -1614,6 +1614,14 @@ func versionCard(d APIKeysData) templ.Component {
 			templ_7745c5c3_Var67 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
+		// The sample request shows a real key prefix when the merchant has one.
+		sampleKey := "sk_" + d.Mode
+		for _, k := range d.Keys {
+			if !k.Revoked {
+				sampleKey = strings.SplitN(k.Token, "_•", 2)[0]
+				break
+			}
+		}
 		templ_7745c5c3_Var68 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -1717,9 +1725,9 @@ func versionCard(d APIKeysData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var73 string
-				templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(strings.SplitN(d.Keys[1].Token, "_•", 2)[0])
+				templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(sampleKey)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `blocks/dashboard/apikeys.templ`, Line: 255, Col: 125}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `blocks/dashboard/apikeys.templ`, Line: 265, Col: 89}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 				if templ_7745c5c3_Err != nil {
@@ -1732,7 +1740,7 @@ func versionCard(d APIKeysData) templ.Component {
 				var templ_7745c5c3_Var74 string
 				templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(d.APIVersion)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `blocks/dashboard/apikeys.templ`, Line: 257, Col: 88}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `blocks/dashboard/apikeys.templ`, Line: 267, Col: 88}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 				if templ_7745c5c3_Err != nil {
@@ -1944,7 +1952,7 @@ func createKeyDialog(d APIKeysData) templ.Component {
 						var templ_7745c5c3_Var84 string
 						templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(d.Mode)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `blocks/dashboard/apikeys.templ`, Line: 287, Col: 20}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `blocks/dashboard/apikeys.templ`, Line: 297, Col: 20}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 						if templ_7745c5c3_Err != nil {
@@ -2138,7 +2146,7 @@ func createKeyDialog(d APIKeysData) templ.Component {
 						var templ_7745c5c3_Var92 string
 						templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.ResolveAttributeValue("scope-" + s.Key)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `blocks/dashboard/apikeys.templ`, Line: 313, Col: 54}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `blocks/dashboard/apikeys.templ`, Line: 323, Col: 54}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var92)
 						if templ_7745c5c3_Err != nil {
@@ -2161,7 +2169,7 @@ func createKeyDialog(d APIKeysData) templ.Component {
 						var templ_7745c5c3_Var93 string
 						templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(s.Label)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `blocks/dashboard/apikeys.templ`, Line: 315, Col: 44}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `blocks/dashboard/apikeys.templ`, Line: 325, Col: 44}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 						if templ_7745c5c3_Err != nil {
@@ -2174,7 +2182,7 @@ func createKeyDialog(d APIKeysData) templ.Component {
 						var templ_7745c5c3_Var94 string
 						templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(s.Desc)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `blocks/dashboard/apikeys.templ`, Line: 316, Col: 61}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `blocks/dashboard/apikeys.templ`, Line: 326, Col: 61}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 						if templ_7745c5c3_Err != nil {

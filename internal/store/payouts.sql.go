@@ -7,6 +7,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -947,4 +948,50 @@ func (q *Queries) SetWithdrawalAddressWhitelisted(ctx context.Context, arg SetWi
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const sumCompletedWithdrawalsByAsset = `-- name: SumCompletedWithdrawalsByAsset :many
+
+SELECT asset_id, count(*) AS count, COALESCE(SUM(amount), 0)::crypto_amount AS amount, COALESCE(SUM(fee_amount), 0)::crypto_amount AS fees
+FROM withdrawals
+WHERE organization_id = $1 AND status = 'confirmed' AND completed_at >= $2
+GROUP BY asset_id
+`
+
+type SumCompletedWithdrawalsByAssetParams struct {
+	OrganizationID uuid.UUID
+	CompletedAt    *time.Time
+}
+
+type SumCompletedWithdrawalsByAssetRow struct {
+	AssetID int16
+	Count   int64
+	Amount  pgtype.Numeric
+	Fees    pgtype.Numeric
+}
+
+// Dashboard aggregates ----------------------------------------------------------
+func (q *Queries) SumCompletedWithdrawalsByAsset(ctx context.Context, arg SumCompletedWithdrawalsByAssetParams) ([]SumCompletedWithdrawalsByAssetRow, error) {
+	rows, err := q.db.Query(ctx, sumCompletedWithdrawalsByAsset, arg.OrganizationID, arg.CompletedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SumCompletedWithdrawalsByAssetRow{}
+	for rows.Next() {
+		var i SumCompletedWithdrawalsByAssetRow
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.Count,
+			&i.Amount,
+			&i.Fees,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
